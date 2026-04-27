@@ -9,3 +9,4 @@ docs/.vitepress/dist/
 .DS_Store
 apps/web/.svelte-kit/
 apps/web/build/
+/.serena

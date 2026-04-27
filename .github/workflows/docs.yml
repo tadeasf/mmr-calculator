@@ -30,12 +30,6 @@ jobs:
       - name: Install dependencies
         run: bun install
 
-      - name: Substitute project name in docs config
-        env:
-          PROJECT_NAME: ${{ github.event.repository.name }}
-        run: |
-          sed -i "s|__PROJECT_NAME__|${PROJECT_NAME}|g" docs/.vitepress/config.ts docs/index.md
-
       - name: Build VitePress site
         run: bun run docs:build
 
