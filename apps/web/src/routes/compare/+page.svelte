@@ -26,132 +26,248 @@ type MmrResult = {
   unranked?: true;
 };
 
+type JobStage =
+  | 'queued'
+  | 'resolving_account'
+  | 'fetching_matches'
+  | 'computing'
+  | 'done'
+  | 'unranked'
+  | 'error'
+  | 'not_found';
+type JobStatus = {
+  stage: JobStage;
+  message: string;
+  matchesTotal: number;
+  matchesProcessed: number;
+  lobbiesUsed: number;
+  error?: string;
+  result?: MmrResult;
+  summoner?: { riotId: string; tag: string; region: string };
+};
+
 let a = $state<SummonerInput>({ riotId: '', tag: '', region: 'euw' });
 let b = $state<SummonerInput>({ riotId: '', tag: '', region: 'euw' });
 let queue = $state('solo');
+let queryActive = $state(false);
+let jobs = $state<{ a: JobStatus | null; b: JobStatus | null }>({ a: null, b: null });
 let results = $state<{ a: MmrResult | null; b: MmrResult | null } | null>(null);
-let loading = $state(false);
 let error = $state<string | null>(null);
+let pollHandle = $state<ReturnType<typeof setTimeout> | null>(null);
 
-async function fetchOne(s: SummonerInput): Promise<MmrResult | null> {
-  const p = new URLSearchParams({ riotId: s.riotId, tag: s.tag, region: s.region, queue });
-  const res = await fetch(`/api/v1/mmr?${p}`);
+async function startOne(s: SummonerInput): Promise<string | null> {
+  const res = await fetch('/api/v1/mmr/start', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ ...s, queue }),
+  });
   if (!res.ok) return null;
-  return res.json() as Promise<MmrResult>;
+  const body = (await res.json()) as { jobId: string };
+  return body.jobId;
+}
+
+async function fetchStatus(id: string): Promise<JobStatus | null> {
+  const res = await fetch(`/api/v1/mmr/status?id=${encodeURIComponent(id)}`);
+  if (!res.ok && res.status !== 404) return null;
+  return (await res.json()) as JobStatus;
 }
 
 async function compare() {
   if (!a.riotId || !a.tag || !b.riotId || !b.tag) return;
-  loading = true;
+  if (pollHandle) clearTimeout(pollHandle);
+  queryActive = true;
   error = null;
-  try {
-    const [ra, rb] = await Promise.all([fetchOne(a), fetchOne(b)]);
-    results = { a: ra, b: rb };
-  } catch {
-    error = 'Failed to fetch one or both players.';
-  } finally {
-    loading = false;
+  jobs = { a: null, b: null };
+  results = null;
+
+  const [idA, idB] = await Promise.all([startOne(a), startOne(b)]);
+  if (!idA || !idB) {
+    error = 'Failed to start one or both jobs.';
+    queryActive = false;
+    return;
   }
+
+  poll(idA, idB);
 }
 
-function confidenceBadge(c: 'high' | 'medium' | 'low') {
-  if (c === 'high') return 'bg-emerald-900/40 text-emerald-400 border border-emerald-700/40';
-  if (c === 'medium') return 'bg-yellow-900/40 text-yellow-400 border border-yellow-700/40';
-  return 'bg-red-900/40 text-red-400 border border-red-700/40';
+async function poll(idA: string, idB: string) {
+  const [statusA, statusB] = await Promise.all([fetchStatus(idA), fetchStatus(idB)]);
+  jobs = { a: statusA, b: statusB };
+
+  const isTerminal = (s: JobStatus | null) =>
+    !!s &&
+    (s.stage === 'done' ||
+      s.stage === 'unranked' ||
+      s.stage === 'error' ||
+      s.stage === 'not_found');
+
+  if (isTerminal(statusA) && isTerminal(statusB)) {
+    results = {
+      a: extractResult(statusA),
+      b: extractResult(statusB),
+    };
+    queryActive = false;
+    return;
+  }
+
+  pollHandle = setTimeout(() => poll(idA, idB), 2_000);
 }
 
-function mmrDiff(): string {
-  if (!results?.a?.mmr || !results?.b?.mmr) return '';
-  const diff = results.a.mmr.mu - results.b.mmr.mu;
-  return `${diff > 0 ? '+' : ''}${diff} MMR`;
+function extractResult(s: JobStatus | null): MmrResult | null {
+  if (!s) return null;
+  if (s.stage === 'done' && s.result) return s.result;
+  if (s.stage === 'unranked' && s.summoner) {
+    return { unranked: true, summoner: s.summoner };
+  }
+  return null;
+}
+
+function progressPercent(j: JobStatus | null): number {
+  if (!j) return 0;
+  if (j.stage === 'done') return 100;
+  if (j.stage === 'unranked' || j.stage === 'error' || j.stage === 'not_found') return 100;
+  if (j.stage === 'fetching_matches' && j.matchesTotal > 0) {
+    const fetched = j.matchesProcessed / j.matchesTotal;
+    return Math.round(30 + fetched * 60);
+  }
+  if (j.stage === 'computing') return 95;
+  if (j.stage === 'resolving_account') return 15;
+  return 5;
+}
+
+function confidenceChip(c: 'high' | 'medium' | 'low') {
+  if (c === 'high') return 'chip chip-good';
+  if (c === 'medium') return 'chip chip-warn';
+  return 'chip chip-bad';
+}
+
+function diffNumber(): number {
+  if (!results?.a?.mmr || !results?.b?.mmr) return 0;
+  return results.a.mmr.mu - results.b.mmr.mu;
 }
 </script>
 
 <svelte:head>
-  <title>Compare MMR — Two Players Side by Side</title>
-  <meta name="description" content="Compare the MMR estimates of two League of Legends players side by side." />
+  <title>Compare — two-player MMR diff</title>
+  <meta name="description" content="Compare the MMR estimates of two League of Legends players side by side, with confidence intervals and the gap between them." />
 </svelte:head>
 
-<div class="max-w-[1100px] mx-auto px-6 py-12">
-  <h1 class="text-2xl font-semibold text-zinc-50 mb-2">Compare players</h1>
-  <p class="text-zinc-400 mb-8 text-sm">Estimate two players' MMR and show the gap.</p>
+<div class="max-w-[1180px] mx-auto px-6 pt-16 pb-24">
+  <div class="flex items-center gap-3 mb-8">
+    <span class="label-mono">[ tool · 03 ]</span>
+    <span class="h-px flex-1 bg-[var(--color-rule)]"></span>
+    <span class="label-mono">two-player diff</span>
+  </div>
 
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-    {#each [{ label: 'Player A', val: a }, { label: 'Player B', val: b }] as { label, val }}
-      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-        <p class="text-zinc-500 text-xs uppercase tracking-wide mb-3">{label}</p>
-        <div class="flex gap-2 mb-3">
-          <input
-            type="text"
-            bind:value={val.riotId}
-            placeholder="Riot ID"
-            class="flex-1 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-zinc-50 text-sm placeholder-zinc-500 focus:outline-none focus:border-cyan-500 transition-colors"
-          />
-          <span class="self-center text-zinc-500">#</span>
-          <input
-            type="text"
-            bind:value={val.tag}
-            placeholder="TAG"
-            class="w-24 bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-zinc-50 text-sm placeholder-zinc-500 focus:outline-none focus:border-cyan-500 transition-colors uppercase"
-          />
+  <h1 class="display-serif text-[56px] sm:text-[72px] text-[var(--color-ink)] leading-[0.95] mb-4">
+    Compare two players.
+  </h1>
+  <p class="text-[var(--color-ink-muted)] text-lg leading-relaxed mb-12 max-w-2xl">
+    Run two estimates in parallel, see the gap. Each player gets the same three-tier treatment;
+    the difference is calculated only when both jobs finish.
+  </p>
+
+  <!-- Input row -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-px bg-[var(--color-rule)] surface mb-6 overflow-hidden">
+    {#each [{ key: 'a', label: 'A', val: a }, { key: 'b', label: 'B', val: b }] as { label, val }}
+      <div class="bg-[var(--color-surface-1)] p-6">
+        <div class="flex items-baseline justify-between mb-5">
+          <span class="numeric text-[var(--color-signal-strong)] text-base tracking-widest">[{label}]</span>
+          <span class="label-mono">player</span>
         </div>
-        <select
-          bind:value={val.region}
-          class="w-full bg-zinc-800 border border-zinc-700 rounded-lg px-3 py-2 text-zinc-50 text-sm focus:outline-none focus:border-cyan-500 transition-colors"
-        >
+        <div class="grid grid-cols-12 gap-2 mb-3">
+          <div class="col-span-7">
+            <label class="label-mono-strong block mb-2">riot id</label>
+            <input type="text" bind:value={val.riotId} placeholder="Faker" class="field w-full" autocomplete="off" />
+          </div>
+          <div class="col-span-5">
+            <label class="label-mono-strong block mb-2">tag</label>
+            <div class="relative">
+              <span class="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--color-ink-faint)] font-mono text-sm">#</span>
+              <input type="text" bind:value={val.tag} placeholder="KR1" class="field w-full pl-7 uppercase" autocomplete="off" />
+            </div>
+          </div>
+        </div>
+        <label class="label-mono-strong block mb-2">region</label>
+        <select bind:value={val.region} class="field w-full">
           {#each REGIONS as r}
-            <option value={r.value}>{r.label}</option>
+            <option value={r.value} class="bg-[var(--color-surface-2)]">{r.label}</option>
           {/each}
         </select>
       </div>
     {/each}
   </div>
 
-  <div class="flex items-center gap-4 mb-8">
-    <select
-      bind:value={queue}
-      class="bg-zinc-900 border border-zinc-700 rounded-lg px-4 py-2 text-zinc-50 text-sm focus:outline-none focus:border-cyan-500 transition-colors"
-    >
-      <option value="solo">Solo/Duo</option>
-      <option value="flex">Flex</option>
+  <div class="flex items-center gap-3 mb-12">
+    <select bind:value={queue} class="field w-auto">
+      <option value="solo" class="bg-[var(--color-surface-2)]">Solo / Duo</option>
+      <option value="flex" class="bg-[var(--color-surface-2)]">Flex 5v5</option>
     </select>
-
-    <button
-      onclick={compare}
-      disabled={loading || !a.riotId || !a.tag || !b.riotId || !b.tag}
-      class="px-6 py-2 bg-cyan-500 hover:bg-cyan-600 disabled:opacity-40 text-zinc-950 font-semibold rounded-lg text-sm transition-colors"
-    >
-      {loading ? 'Loading…' : 'Compare'}
+    <button onclick={compare} disabled={queryActive || !a.riotId || !a.tag || !b.riotId || !b.tag} class="btn-primary">
+      {queryActive ? 'Running…' : 'Compare →'}
     </button>
   </div>
 
   {#if error}
-    <div class="bg-red-950/30 border border-red-800/40 rounded-xl p-6">
-      <p class="text-red-400 text-sm">{error}</p>
+    <div class="surface p-6 mb-8">
+      <span class="chip chip-bad">[ error ]</span>
+      <p class="font-mono text-sm text-[var(--color-bad)] mt-3">{error}</p>
+    </div>
+  {/if}
+
+  {#if queryActive}
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-px bg-[var(--color-rule)] surface mb-6 overflow-hidden">
+      {#each [{ key: 'a' as const, label: 'A', job: jobs.a }, { key: 'b' as const, label: 'B', job: jobs.b }] as { label, job }}
+        <div class="bg-[var(--color-surface-1)] p-6">
+          <div class="flex items-baseline justify-between mb-3">
+            <span class="numeric text-[var(--color-signal-strong)] text-base tracking-widest">[{label}]</span>
+            <span class="numeric label-mono">{progressPercent(job)}%</span>
+          </div>
+          <p class="font-mono text-xs text-[var(--color-ink-muted)] mb-4">
+            → {job?.message ?? 'queued'}
+          </p>
+          <div class="h-1 bg-[var(--color-rule)] rounded-full overflow-hidden">
+            <div class="h-full bg-[var(--color-signal-strong)] transition-all duration-500" style="width: {progressPercent(job)}%"></div>
+          </div>
+        </div>
+      {/each}
     </div>
   {/if}
 
   {#if results}
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-      {#each [{ key: 'a', player: results.a, label: 'Player A' }, { key: 'b', player: results.b, label: 'Player B' }] as { label, player }}
-        <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6">
-          <p class="text-zinc-500 text-xs uppercase tracking-wide mb-3">{label}</p>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-px bg-[var(--color-rule)] surface mb-px overflow-hidden">
+      {#each [{ key: 'a' as const, label: 'A', player: results.a }, { key: 'b' as const, label: 'B', player: results.b }] as { label, player }}
+        <div class="bg-[var(--color-surface-1)] p-6 sm:p-7 relative tick-rule">
+          <div class="flex items-baseline justify-between mb-4">
+            <span class="numeric text-[var(--color-signal-strong)] text-base tracking-widest">[{label}]</span>
+            <span class="label-mono">{queue}</span>
+          </div>
           {#if !player}
-            <p class="text-red-400 text-sm">Failed to fetch.</p>
+            <p class="display-serif text-2xl text-[var(--color-bad)]">Failed.</p>
           {:else if player.unranked}
-            <p class="text-zinc-400 text-sm">Unranked in this queue.</p>
+            <p class="display-serif text-2xl text-[var(--color-ink)] mb-2">
+              {player.summoner.riotId}<span class="text-[var(--color-ink-faint)]">#{player.summoner.tag}</span>
+            </p>
+            <p class="text-sm text-[var(--color-ink-muted)]">Unranked in this queue.</p>
           {:else if player.mmr}
-            <p class="text-zinc-300 text-sm mb-1">{player.summoner.riotId}#{player.summoner.tag}</p>
-            <p class="text-4xl font-bold text-zinc-50 mb-1">{player.mmr.mu}</p>
-            <p class="text-zinc-500 text-xs mb-3">CI: {player.mmr.ci90[0]}–{player.mmr.ci90[1]}</p>
+            <p class="font-mono text-sm text-[var(--color-ink-muted)] mb-3">
+              {player.summoner.riotId}<span class="text-[var(--color-ink-faint)]">#{player.summoner.tag}</span>
+            </p>
+            <div class="flex items-baseline gap-3 mb-1">
+              <span class="numeric text-[64px] text-[var(--color-ink)] leading-none">{player.mmr.mu.toLocaleString()}</span>
+              <span class="numeric text-sm text-[var(--color-ink-faint)]">MMR</span>
+            </div>
+            <p class="numeric text-xs text-[var(--color-ink-faint)] mb-5">
+              CI<sub>90</sub> {player.mmr.ci90[0]} — {player.mmr.ci90[1]} &nbsp;·&nbsp; σ {player.mmr.sigma}
+            </p>
             {#if player.rank}
-              <p class="text-zinc-400 text-xs">
+              <p class="font-mono text-xs text-[var(--color-ink-muted)] mb-3">
                 {player.rank.tier.charAt(0) + player.rank.tier.slice(1).toLowerCase()}
                 {['MASTER','GRANDMASTER','CHALLENGER'].includes(player.rank.tier.toUpperCase()) ? '' : player.rank.division}
-                · {player.rank.lp} LP
+                · <span class="numeric text-[var(--color-ink)]">{player.rank.lp}</span> LP
               </p>
             {/if}
-            <span class="mt-3 inline-block px-2 py-0.5 rounded text-xs {confidenceBadge(player.mmr.confidence)}">
+            <span class={confidenceChip(player.mmr.confidence)}>
               {player.mmr.confidence}
             </span>
           {/if}
@@ -160,18 +276,18 @@ function mmrDiff(): string {
     </div>
 
     {#if results.a?.mmr && results.b?.mmr}
-      {@const diff = results.a.mmr.mu - results.b.mmr.mu}
-      <div class="bg-zinc-900 border border-zinc-800 rounded-xl p-6 text-center">
-        <p class="text-zinc-500 text-xs uppercase tracking-wide mb-2">MMR gap</p>
-        <p class="text-3xl font-bold {diff === 0 ? 'text-zinc-50' : diff > 0 ? 'text-emerald-400' : 'text-red-400'}">
-          {mmrDiff()}
+      {@const diff = diffNumber()}
+      <div class="surface p-8 mt-px text-center">
+        <p class="label-mono mb-3">[ Δ MMR · A − B ]</p>
+        <p class="numeric text-[80px] leading-none {diff === 0 ? 'text-[var(--color-ink)]' : diff > 0 ? 'text-[var(--color-good)]' : 'text-[var(--color-bad)]'}">
+          {diff > 0 ? '+' : ''}{diff}
         </p>
-        <p class="text-zinc-500 text-xs mt-2">
+        <p class="text-[var(--color-ink-muted)] text-sm mt-3 max-w-md mx-auto">
           {Math.abs(diff) <= 50
-            ? 'Effectively the same MMR range'
+            ? 'Effectively the same MMR range — smaller than the irreducible-noise floor.'
             : Math.abs(diff) <= 150
-              ? 'Small but meaningful gap'
-              : 'Significant MMR difference'}
+              ? 'Small but meaningful gap — about one division of MMR.'
+              : 'Significant difference — multiple divisions apart.'}
         </p>
       </div>
     {/if}

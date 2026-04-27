@@ -13,12 +13,14 @@ const workerPath = resolve(outDir, '_worker.js');
 const workerBasePath = resolve(outDir, '_worker_base.js');
 
 // Idempotent: skip if already patched
-if (readFileSync(workerPath, 'utf8').includes('RateLimiterDO')) {
+if (readFileSync(workerPath, 'utf8').includes('EstimateJobDO')) {
   process.exit(0);
 }
 
 // Step 1: rename generated worker so we can wrap it
 renameSync(workerPath, workerBasePath);
+
+const monorepoNodeModules = resolve(__dir, '../../../node_modules');
 
 // Step 2: bundle RateLimiterDO
 await build({
@@ -29,9 +31,22 @@ await build({
   external: ['cloudflare:workers'],
   target: 'es2022',
   logLevel: 'silent',
+  nodePaths: [monorepoNodeModules],
 });
 
-// Step 3: bundle cron handler
+// Step 3: bundle EstimateJobDO
+await build({
+  entryPoints: [resolve(__dir, '../src/lib/server/estimate-job.do.ts')],
+  bundle: true,
+  format: 'esm',
+  outfile: resolve(outDir, '_estimate_job_do.js'),
+  external: ['cloudflare:workers'],
+  target: 'es2022',
+  logLevel: 'silent',
+  nodePaths: [monorepoNodeModules],
+});
+
+// Step 4: bundle cron handler
 await build({
   entryPoints: [resolve(__dir, '../src/lib/server/cron.ts')],
   bundle: true,
@@ -40,18 +55,18 @@ await build({
   external: ['cloudflare:workers'],
   target: 'es2022',
   logLevel: 'silent',
-  // resolve workspace packages from the monorepo root node_modules
-  nodePaths: [resolve(__dir, '../../../node_modules')],
+  nodePaths: [monorepoNodeModules],
 });
 
-// Step 4: write new _worker.js wrapper
+// Step 5: write new _worker.js wrapper
 writeFileSync(
   workerPath,
   `import base from './_worker_base.js';
 import { handleScheduled } from './_cron.js';
 export { RateLimiterDO } from './_rate_limiter_do.js';
+export { EstimateJobDO } from './_estimate_job_do.js';
 export default { ...base, scheduled: handleScheduled };
 `,
 );
 
-console.log('✓ Injected RateLimiterDO and scheduled() handler into _worker.js');
+console.log('✓ Injected RateLimiterDO, EstimateJobDO and scheduled() handler into _worker.js');

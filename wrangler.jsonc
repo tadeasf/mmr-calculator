@@ -32,6 +32,10 @@
       {
         "name": "RATE_LIMITER",
         "class_name": "RateLimiterDO"
+      },
+      {
+        "name": "ESTIMATE_JOB",
+        "class_name": "EstimateJobDO"
       }
     ]
   },
@@ -39,7 +43,11 @@
   "migrations": [
     {
       "tag": "v1",
-      "new_sqlite_classes": ["RateLimiterDO"]
+      "new_classes": ["RateLimiterDO"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["EstimateJobDO"]
     }
   ],
 

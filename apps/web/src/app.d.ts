@@ -7,6 +7,7 @@ declare global {
         DB: D1Database;
         CACHE: KVNamespace;
         RATE_LIMITER: DurableObjectNamespace;
+        ESTIMATE_JOB: DurableObjectNamespace;
         RIOT_API_KEY: string;
       };
       context: {

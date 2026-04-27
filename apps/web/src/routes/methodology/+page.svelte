@@ -1,98 +1,130 @@
 <svelte:head>
-  <title>How MMR Estimation Works — Methodology</title>
+  <title>Methodology — three-tier MMR estimator</title>
   <meta name="description" content="Three-tier methodology: LP win behavior, lobby composition analysis, and inverse-variance combination. Real confidence intervals, not fake precision." />
 </svelte:head>
 
-<div class="max-w-[780px] mx-auto px-6 py-16">
-  <h1 class="text-3xl font-semibold text-zinc-50 mb-3">How the estimate works</h1>
-  <p class="text-zinc-400 mb-12 text-lg">Three independent signals, combined with inverse-variance weighting. Each signal gets a confidence interval — the final estimate inherits all of them.</p>
+<article class="max-w-[820px] mx-auto px-6 pt-16 pb-24">
+  <div class="flex items-center gap-3 mb-8">
+    <span class="label-mono">[ doc · 01 ]</span>
+    <span class="h-px flex-1 bg-[var(--color-rule)]"></span>
+    <span class="label-mono">methodology</span>
+  </div>
 
-  <section class="mb-12">
-    <h2 class="text-xl font-semibold text-zinc-200 mb-4">Tier 1 — LP win behavior</h2>
-    <p class="text-zinc-400 leading-relaxed mb-4">
-      The simplest signal: how are you doing relative to expected 50/50? If you're winning more than you lose, the LP system likely has your MMR set below your actual skill level. The gap signal is:
-    </p>
-    <div class="bg-zinc-900 border border-zinc-800 rounded-lg px-5 py-4 font-mono text-sm text-zinc-300 mb-4">
-      gap = K × (winrate − 0.5) × √n
+  <h1 class="display-serif text-[56px] sm:text-[72px] text-[var(--color-ink)] leading-[0.95] mb-6">
+    How the estimate works.
+  </h1>
+  <p class="text-[var(--color-ink-muted)] text-lg leading-relaxed mb-12">
+    Three independent signals, combined with inverse-variance weighting. Each signal carries its own
+    confidence interval — the final estimate inherits both, then adds an irreducible-noise floor.
+  </p>
+
+  <section class="mb-16">
+    <div class="flex items-baseline gap-4 mb-4">
+      <span class="numeric text-[var(--color-signal-strong)] text-xs tracking-widest">T1</span>
+      <h2 class="display-serif text-3xl text-[var(--color-ink)]">LP win behavior</h2>
     </div>
-    <p class="text-zinc-500 text-sm leading-relaxed">
-      K = 200. The uncertainty σ = max(60, 200/√n). With fewer than 11 games the signal is highly uncertain (σ ≥ 60). With 100+ games it stabilizes around σ ≈ 20. Apex tier accounts (Master+) skip Tier 1 entirely — LP is meaningless at that range.
+    <p class="text-[var(--color-ink-muted)] leading-relaxed mb-5">
+      The simplest signal: how is the matchmaker treating you relative to a 50% target win rate?
+      Deviation from 50%, scaled by sample size, is a noisy but unbiased estimate of how far your
+      MMR sits from your bracket's median.
+    </p>
+    <pre class="surface-deep p-5 font-mono text-sm text-[var(--color-ink-muted)] mb-4 overflow-x-auto"><span class="text-[var(--color-ink)]">gap</span> = K × (winrate − 0.5) × √n
+<span class="text-[var(--color-ink-faint)]">σ</span>   = max(60, 200 / √n)</pre>
+    <p class="text-[var(--color-ink-faint)] text-sm leading-relaxed">
+      K = 200, calibrated against accounts with known peak MMR. Below 11 games, σ ≥ 60 — the
+      signal is too noisy to reduce uncertainty further. Above 100 games it stabilises around
+      σ ≈ 20. Apex tier accounts skip Tier 1 entirely; LP loses meaning at the top of the ladder.
     </p>
   </section>
 
-  <section class="mb-12">
-    <h2 class="text-xl font-semibold text-zinc-200 mb-4">Tier 2 — Lobby composition</h2>
-    <p class="text-zinc-400 leading-relaxed mb-4">
-      We look at up to 20 recent ranked games. For each lobby we convert every participant's current rank to an MMR value, then weight opponents at 60% and teammates at 40% (matchmaking targets opponent skill). Games further in the past are exponentially down-weighted:
-    </p>
-    <div class="bg-zinc-900 border border-zinc-800 rounded-lg px-5 py-4 font-mono text-sm text-zinc-300 mb-4">
-      weight(daysAgo) = e<sup class="text-xs">−daysAgo/14</sup>
+  <section class="mb-16">
+    <div class="flex items-baseline gap-4 mb-4">
+      <span class="numeric text-[var(--color-signal-strong)] text-xs tracking-widest">T2</span>
+      <h2 class="display-serif text-3xl text-[var(--color-ink)]">Lobby composition</h2>
     </div>
-    <p class="text-zinc-500 text-sm leading-relaxed">
-      A game from 14 days ago counts at ≈37% of a game from today. Lobbies where more than 2 participants are unranked are skipped. The Tier 2 estimate uses effective sample size to set σ, so sparse recent data properly inflates uncertainty.
+    <p class="text-[var(--color-ink-muted)] leading-relaxed mb-5">
+      The strong signal. We pull up to 20 recent ranked games. For every other participant we
+      look up <em class="not-italic font-serif text-[var(--color-ink)]">their current rank</em>,
+      convert it to MMR, and aggregate into a recency-weighted lobby average. Opponents weigh
+      more than teammates because matchmaking targets opponent skill.
     </p>
-    <p class="text-zinc-500 text-sm leading-relaxed mt-3">
-      Apex tier accounts get σ × 1.5 because high-MMR players frequently appear in mixed-skill lobbies — the lobby signal is less reliable there.
+    <pre class="surface-deep p-5 font-mono text-sm text-[var(--color-ink-muted)] mb-4 overflow-x-auto"><span class="text-[var(--color-ink)]">weight(d)</span>      = e^(−d / 14)            <span class="text-[var(--color-ink-faint)]"># days-ago decay</span>
+<span class="text-[var(--color-ink)]">opp_weight</span>     = 0.6
+<span class="text-[var(--color-ink)]">team_weight</span>    = 0.4
+<span class="text-[var(--color-ink)]">μ₂</span> = Σ wᵢ · lobbyMmrᵢ / Σ wᵢ</pre>
+    <p class="text-[var(--color-ink-faint)] text-sm leading-relaxed">
+      A game from 14 days ago counts at ≈37% of a game from today. Lobbies with more than 2
+      unranked participants are skipped — they distort the average. σ is set from effective
+      sample size, so sparse data correctly inflates uncertainty. Apex accounts get σ × 1.5 to
+      reflect the wider rank spread of high-MMR lobbies.
     </p>
   </section>
 
-  <section class="mb-12">
-    <h2 class="text-xl font-semibold text-zinc-200 mb-4">Combining the signals</h2>
-    <p class="text-zinc-400 leading-relaxed mb-4">
-      Each tier produces a (μ, σ) pair. We combine them with inverse-variance weighting — signals with smaller uncertainty get more weight:
-    </p>
-    <div class="bg-zinc-900 border border-zinc-800 rounded-lg px-5 py-4 font-mono text-sm text-zinc-300 mb-4">
-      w₁ = 1/σ₁² &nbsp; w₂ = 1/σ₂²<br />
-      μ = (w₁μ₁ + w₂μ₂) / (w₁ + w₂)<br />
-      σ = 1 / √(w₁ + w₂)
+  <section class="mb-16">
+    <div class="flex items-baseline gap-4 mb-4">
+      <span class="numeric text-[var(--color-signal-strong)] text-xs tracking-widest">T3</span>
+      <h2 class="display-serif text-3xl text-[var(--color-ink)]">Combining the signals</h2>
     </div>
-    <p class="text-zinc-500 text-sm leading-relaxed">
-      σ is floored at 40 to prevent overconfident estimates. The 90% CI is μ ± 1.645σ.
+    <p class="text-[var(--color-ink-muted)] leading-relaxed mb-5">
+      Each tier produces a (μ, σ) pair. Inverse-variance weighting gives more weight to whichever
+      tier is more confident for this specific account. New players with sparse history lean on
+      Tier 1; steady-state mid-rank accounts lean on Tier 2.
+    </p>
+    <pre class="surface-deep p-5 font-mono text-sm text-[var(--color-ink-muted)] mb-4 overflow-x-auto"><span class="text-[var(--color-ink)]">w₁</span> = 1 / σ₁²    <span class="text-[var(--color-ink)]">w₂</span> = 1 / σ₂²
+<span class="text-[var(--color-ink)]">μ</span>  = (w₁ · μ₁ + w₂ · μ₂) / (w₁ + w₂)
+<span class="text-[var(--color-ink)]">σ</span>  = √(1 / (w₁ + w₂))           <span class="text-[var(--color-ink-faint)]"># floored at 40</span></pre>
+    <p class="text-[var(--color-ink-faint)] text-sm leading-relaxed">
+      σ is floored at 40 to prevent overconfident estimates. The 90% confidence interval is
+      <span class="numeric text-[var(--color-ink)]">μ ± 1.645σ</span>.
     </p>
   </section>
 
-  <section class="mb-12">
-    <h2 class="text-xl font-semibold text-zinc-200 mb-4">Confidence levels</h2>
-    <div class="space-y-3 text-sm">
-      <div class="flex items-start gap-3">
-        <span class="mt-0.5 px-2 py-0.5 rounded-full text-xs bg-emerald-900/40 text-emerald-400 border border-emerald-700/40 whitespace-nowrap">high</span>
-        <p class="text-zinc-400">σ ≤ 60 and Tier 2 is available. The estimate has tight agreement between signals.</p>
+  <section class="mb-16">
+    <h2 class="display-serif text-3xl text-[var(--color-ink)] mb-6">Confidence levels</h2>
+    <div class="surface divide-y divide-[var(--color-rule)]">
+      <div class="flex items-start gap-5 p-5">
+        <span class="chip chip-good w-20 justify-center shrink-0">high</span>
+        <p class="text-sm text-[var(--color-ink-muted)] leading-relaxed">
+          σ ≤ 60 with Tier 2 available. Tight agreement between signals — the estimate is your
+          best public-data approximation of Riot's internal MMR.
+        </p>
       </div>
-      <div class="flex items-start gap-3">
-        <span class="mt-0.5 px-2 py-0.5 rounded-full text-xs bg-yellow-900/40 text-yellow-400 border border-yellow-700/40 whitespace-nowrap">medium</span>
-        <p class="text-zinc-400">σ between 60 and 100 with Tier 2 available. Reasonable estimate, meaningful CI range.</p>
+      <div class="flex items-start gap-5 p-5">
+        <span class="chip chip-warn w-20 justify-center shrink-0">medium</span>
+        <p class="text-sm text-[var(--color-ink-muted)] leading-relaxed">
+          σ between 60 and 100, Tier 2 present. A meaningful CI range. Use the midpoint with caution.
+        </p>
       </div>
-      <div class="flex items-start gap-3">
-        <span class="mt-0.5 px-2 py-0.5 rounded-full text-xs bg-red-900/40 text-red-400 border border-red-700/40 whitespace-nowrap">low</span>
-        <p class="text-zinc-400">σ &gt; 100, or Tier 2 is unavailable (less than 3 valid lobbies). The number is our best guess, but treat it as a rough indication only.</p>
+      <div class="flex items-start gap-5 p-5">
+        <span class="chip chip-bad w-20 justify-center shrink-0">low</span>
+        <p class="text-sm text-[var(--color-ink-muted)] leading-relaxed">
+          σ &gt; 100, or Tier 2 has fewer than 3 valid lobbies. The point estimate is our best
+          guess; treat it as a rough indication, not a number to argue about.
+        </p>
       </div>
     </div>
   </section>
 
-  <section class="mb-12">
-    <h2 class="text-xl font-semibold text-zinc-200 mb-4">LP efficiency</h2>
-    <p class="text-zinc-400 leading-relaxed mb-3">
-      When your estimated MMR is higher than your visible rank, the LP system compensates by giving you more LP per win and taking less per loss. We estimate the expected LP gain/loss from the gap:
+  <section class="mb-16">
+    <h2 class="display-serif text-3xl text-[var(--color-ink)] mb-6">Rank conversion</h2>
+    <p class="text-[var(--color-ink-muted)] leading-relaxed mb-5">
+      Ranks map onto MMR via a fixed ladder: Iron IV = 400, each division +100, each tier +400.
+      Apex tiers use LP directly (Master = 2,400 + LP). Calibrated to within ±50 MMR for Diamond
+      and below.
     </p>
-    <div class="bg-zinc-900 border border-zinc-800 rounded-lg px-5 py-4 font-mono text-sm text-zinc-300 mb-3">
-      avgLpGain ≈ 20 + gap × 0.03
-    </div>
-    <p class="text-zinc-500 text-sm">The break-even winrate tells you: at what winrate does your LP go up? If the system already rewards you, the bar is lower than 50%.</p>
-  </section>
-
-  <section class="mb-12">
-    <h2 class="text-xl font-semibold text-zinc-200 mb-4">Rank conversion</h2>
-    <p class="text-zinc-400 leading-relaxed mb-3">
-      Ranks map to MMR via a fixed scale. Iron IV = 400, each division adds 100, each tier adds 400. Apex tiers use LP directly (Master = 2400 + LP). This matches known MMR thresholds within ±50 MMR for Diamond and below.
-    </p>
-    <div class="bg-zinc-900 border border-zinc-800 rounded-lg px-5 py-4 text-sm text-zinc-300 overflow-x-auto">
-      <table class="w-full text-left">
-        <thead><tr class="text-zinc-500 text-xs"><th class="pb-2">Rank</th><th class="pb-2 text-right">MMR floor</th></tr></thead>
-        <tbody class="space-y-1">
+    <div class="surface overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="border-b border-[var(--color-rule)]">
+          <tr>
+            <th class="text-left p-3 label-mono">rank</th>
+            <th class="text-right p-3 label-mono">mmr floor</th>
+          </tr>
+        </thead>
+        <tbody>
           {#each [['Iron IV', 400], ['Bronze IV', 800], ['Silver IV', 1000], ['Gold IV', 1200], ['Platinum IV', 1400], ['Emerald IV', 1600], ['Diamond IV', 1800], ['Master', 2000]] as [label, mmr]}
-            <tr class="border-t border-zinc-800">
-              <td class="py-1.5 text-zinc-400">{label}</td>
-              <td class="py-1.5 text-right text-zinc-300">{mmr}</td>
+            <tr class="border-t border-[var(--color-rule)] hover:bg-[var(--color-surface-2)] transition-colors">
+              <td class="p-3 text-[var(--color-ink)]">{label}</td>
+              <td class="p-3 text-right numeric text-[var(--color-ink-muted)]">{mmr}</td>
             </tr>
           {/each}
         </tbody>
@@ -100,13 +132,39 @@
     </div>
   </section>
 
+  <section class="mb-16">
+    <h2 class="display-serif text-3xl text-[var(--color-ink)] mb-6">LP efficiency</h2>
+    <p class="text-[var(--color-ink-muted)] leading-relaxed mb-5">
+      When estimated MMR exceeds visible rank, the LP system compensates: more LP per win, less
+      taken per loss. We approximate the expected gain/loss from the gap.
+    </p>
+    <pre class="surface-deep p-5 font-mono text-sm text-[var(--color-ink-muted)] mb-4 overflow-x-auto"><span class="text-[var(--color-ink)]">avgLpGain</span> ≈ 20 + gap × 0.03
+<span class="text-[var(--color-ink)]">avgLpLoss</span> ≈ 20 − gap × 0.03</pre>
+    <p class="text-[var(--color-ink-faint)] text-sm leading-relaxed">
+      The break-even winrate tells you: at what WR does LP go up? If LP rewards you, the bar is
+      lower than 50%. If it punishes you, higher.
+    </p>
+  </section>
+
   <section>
-    <h2 class="text-xl font-semibold text-zinc-200 mb-4">What this isn't</h2>
-    <ul class="space-y-2 text-zinc-400 text-sm leading-relaxed">
-      <li class="flex gap-2"><span class="text-red-400 mt-0.5">✗</span> Not a winrate multiplier. We don't take your win % and multiply by a magic number.</li>
-      <li class="flex gap-2"><span class="text-red-400 mt-0.5">✗</span> Not the Riot internal MMR number. We can't read their database. This is an estimate from observable data.</li>
-      <li class="flex gap-2"><span class="text-red-400 mt-0.5">✗</span> Not fake precision. 2,147 is a made-up number. We show you the range.</li>
-      <li class="flex gap-2"><span class="text-emerald-400 mt-0.5">✓</span> An honest estimate with a real confidence interval, updated as you play.</li>
+    <h2 class="display-serif text-3xl text-[var(--color-ink)] mb-6">What this isn't</h2>
+    <ul class="space-y-3 text-sm">
+      <li class="flex items-start gap-3 text-[var(--color-ink-muted)]">
+        <span class="text-[var(--color-bad)] mt-0.5 numeric">✗</span>
+        <span>Not a winrate multiplier. We don't take WR and multiply by a magic number.</span>
+      </li>
+      <li class="flex items-start gap-3 text-[var(--color-ink-muted)]">
+        <span class="text-[var(--color-bad)] mt-0.5 numeric">✗</span>
+        <span>Not Riot's internal MMR readout. We can't read their database.</span>
+      </li>
+      <li class="flex items-start gap-3 text-[var(--color-ink-muted)]">
+        <span class="text-[var(--color-bad)] mt-0.5 numeric">✗</span>
+        <span>Not fake precision. <span class="numeric text-[var(--color-ink)]">2,147</span> is a made-up number; we show the range.</span>
+      </li>
+      <li class="flex items-start gap-3 text-[var(--color-ink-muted)] pt-3 border-t border-[var(--color-rule)]">
+        <span class="text-[var(--color-good)] mt-0.5 numeric">✓</span>
+        <span>An honest estimate with a calibrated 90% confidence interval, updated every time you play.</span>
+      </li>
     </ul>
   </section>
-</div>
+</article>
