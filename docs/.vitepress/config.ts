@@ -34,8 +34,6 @@ export default defineConfig({
         ],
       },
     ],
-    socialLinks: [
-      { icon: 'github', link: 'https://github.com/tadeasf/mmr-calculator' },
-    ],
+    socialLinks: [{ icon: 'github', link: 'https://github.com/tadeasf/mmr-calculator' }],
   },
 });
