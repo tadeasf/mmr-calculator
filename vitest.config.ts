@@ -1,15 +1,10 @@
-import { defineWorkersProject } from '@cloudflare/vitest-pool-workers/config';
+import { defineConfig } from 'vitest/config';
 
-export default defineWorkersProject({
+// Root vitest config covers packages/core pure-function tests.
+// CF-pool integration tests live in apps/web/vitest.config.ts.
+export default defineConfig({
   test: {
-    poolOptions: {
-      workers: {
-        singleWorker: true,
-        wrangler: { configPath: './wrangler.jsonc' },
-        miniflare: {
-          d1Databases: ['DB'],
-        },
-      },
-    },
+    include: ['packages/*/src/**/*.test.ts'],
+    environment: 'node',
   },
 });
