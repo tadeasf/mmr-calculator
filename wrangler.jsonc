@@ -1,17 +1,52 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "placeholder-worker",
-  "main": "src/index.ts",
+  "name": "mmr-calculator",
+  "main": "apps/web/.svelte-kit/cloudflare/_worker.js",
   "compatibility_date": "2025-01-15",
   "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "apps/web/.svelte-kit/cloudflare"
+  },
   "observability": {
     "enabled": true
   },
+
   "d1_databases": [
     {
       "binding": "DB",
-      "database_name": "placeholder-db",
-      "database_id": "00000000-0000-0000-0000-000000000000"
+      "database_name": "mmr-calculator-db",
+      "database_id": "08ee08db-f02e-4e06-b1d7-d3f754aeeed3",
+      "migrations_dir": "packages/db/drizzle"
     }
-  ]
+  ],
+
+  "kv_namespaces": [
+    {
+      "binding": "CACHE",
+      "id": "52a19147ddfc4109a02ad29d0210a572"
+    }
+  ],
+
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "RATE_LIMITER",
+        "class_name": "RateLimiterDO"
+      }
+    ]
+  },
+
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_classes": ["RateLimiterDO"]
+    }
+  ],
+
+  "triggers": {
+    "crons": [
+      "30 0 * * *",
+      "0 */6 * * *"
+    ]
+  }
 }

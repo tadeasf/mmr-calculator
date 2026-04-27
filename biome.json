@@ -16,7 +16,10 @@
       "bun.lock",
       "package.json",
       "tsconfig.json",
-      "wrangler.jsonc"
+      "wrangler.jsonc",
+      "packages/db/drizzle/**",
+      "apps/web/.svelte-kit/**",
+      ".svelte-kit/**"
     ]
   },
   "formatter": {
@@ -40,5 +43,17 @@
   },
   "organizeImports": {
     "enabled": true
-  }
+  },
+  "overrides": [
+    {
+      "include": ["*.svelte"],
+      "linter": {
+        "rules": {
+          "style": {
+            "useConst": "off"
+          }
+        }
+      }
+    }
+  ]
 }
