@@ -1,4 +1,6 @@
 <script lang="ts">
+import RankEmblem from '$lib/RankEmblem.svelte';
+import { mmrToRankLabel, mmrToTier, rankToMmr } from '@mmr-calculator/core';
 import type { PageData } from './$types';
 
 type MmrApiResult = {
@@ -201,19 +203,6 @@ function formatWinrate(wins: number, losses: number): string {
   return `${Math.round((wins / total) * 100)}%`;
 }
 
-function mmrLabel(mu: number): string {
-  if (mu < 800) return 'Iron';
-  if (mu < 1000) return 'Bronze';
-  if (mu < 1200) return 'Silver';
-  if (mu < 1400) return 'Gold';
-  if (mu < 1600) return 'Platinum';
-  if (mu < 1800) return 'Emerald';
-  if (mu < 2000) return 'Diamond';
-  if (mu < 2400) return 'Master';
-  if (mu < 2800) return 'Grandmaster';
-  return 'Challenger';
-}
-
 // Map mu/ci90 onto a fixed 0–3000 axis so the CI bar is comparable across players.
 const AXIS_MIN = 0;
 const AXIS_MAX = 3000;
@@ -353,6 +342,8 @@ function axisPct(mmrValue: number): number {
     {@const muPct = axisPct(mmr.mu)}
     {@const ciLowPct = axisPct(mmr.ci90[0])}
     {@const ciHighPct = axisPct(mmr.ci90[1])}
+    {@const rankMmr = rankToMmr(rank.tier, rank.division, rank.lp)}
+    {@const muGap = mmr.mu - rankMmr}
 
     <!-- Hero: μ and CI visualization -->
     <section class="grid grid-cols-12 gap-px bg-[var(--color-rule)] surface mb-px overflow-hidden rise">
@@ -370,10 +361,21 @@ function axisPct(mmrValue: number): number {
           <span class="numeric text-[var(--color-ink-faint)] text-base">MMR</span>
         </div>
 
-        <p class="font-mono text-sm text-[var(--color-ink-muted)] mb-8">
+        <p class="font-mono text-sm text-[var(--color-ink-muted)] mb-2">
           CI<sub class="numeric">90</sub> = <span class="text-[var(--color-ink)]">{mmr.ci90[0].toLocaleString()} — {mmr.ci90[1].toLocaleString()}</span>
           &nbsp;·&nbsp; σ = <span class="text-[var(--color-ink)]">{mmr.sigma}</span>
-          &nbsp;·&nbsp; {mmrLabel(mmr.mu)} range
+        </p>
+        <p class="font-mono text-xs text-[var(--color-ink-faint)] mb-8 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+          <span>→</span>
+          <RankEmblem tier={mmrToTier(mmr.ci90[0])} size={18} />
+          <span>{mmrToRankLabel(mmr.ci90[0])}</span>
+          <span>to</span>
+          <RankEmblem tier={mmrToTier(mmr.ci90[1])} size={18} />
+          <span>{mmrToRankLabel(mmr.ci90[1])}</span>
+          <span>·</span>
+          <span>μ at</span>
+          <RankEmblem tier={mmrToTier(mmr.mu)} size={18} />
+          <span class="text-[var(--color-ink-muted)]">{mmrToRankLabel(mmr.mu)}</span>
         </p>
 
         <!-- Real CI visualization -->
@@ -419,12 +421,15 @@ function axisPct(mmrValue: number): number {
         <div class="flex items-baseline justify-between mb-6">
           <span class="label-mono">[ visible rank ]</span>
         </div>
-        <p class="display-serif text-4xl {tierColor(rank.tier)} mb-1 leading-[1]">
-          {rank.tier.charAt(0) + rank.tier.slice(1).toLowerCase()}
-          {#if !['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(rank.tier.toUpperCase())}
-            <span class="numeric not-italic font-sans">{rank.division}</span>
-          {/if}
-        </p>
+        <div class="flex items-center gap-3 mb-1">
+          <RankEmblem tier={rank.tier} size={56} />
+          <p class="display-serif text-4xl {tierColor(rank.tier)} leading-[1]">
+            {rank.tier.charAt(0) + rank.tier.slice(1).toLowerCase()}
+            {#if !['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(rank.tier.toUpperCase())}
+              <span class="numeric not-italic font-sans">{rank.division}</span>
+            {/if}
+          </p>
+        </div>
         <p class="numeric text-[var(--color-ink-muted)] text-sm mb-8">{rank.lp} LP</p>
 
         <dl class="space-y-3 text-sm border-t border-[var(--color-rule)] pt-5">
@@ -438,8 +443,8 @@ function axisPct(mmrValue: number): number {
           </div>
           <div class="flex items-baseline justify-between">
             <dt class="label-mono">μ − rank</dt>
-            <dd class="numeric {mmr.mu - (rank.lp + 0) > 30 ? 'text-[var(--color-good)]' : mmr.mu - rank.lp < -30 ? 'text-[var(--color-bad)]' : 'text-[var(--color-ink)]'}">
-              {(mmr.mu - rank.lp) > 0 ? '+' : ''}{Math.round(mmr.mu - rank.lp)}
+            <dd class="numeric {muGap > 30 ? 'text-[var(--color-good)]' : muGap < -30 ? 'text-[var(--color-bad)]' : 'text-[var(--color-ink)]'}">
+              {muGap > 0 ? '+' : ''}{Math.round(muGap)}
             </dd>
           </div>
         </dl>
