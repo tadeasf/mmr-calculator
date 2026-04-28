@@ -1,10 +1,11 @@
 <script lang="ts">
-// Tier-only emblems served from Community Dragon. Riot removed division-level
-// emblems in 12.1; all divisions of a tier share one image.
-// Swap EMBLEM_BASE if Community Dragon's path changes; that's the only knob.
-const EMBLEM_BASE =
-  'https://raw.communitydragon.org/latest/plugins/rcp-fe-lol-static-assets/global/default/images/ranked-emblem';
-
+// Emblems are bundled in apps/web/static/ranks/ (downloaded once from
+// magisteriis/lol-icons-and-emblems on GitHub). Same-origin = no CDN/CORS
+// surprises. Riot removed division-specific emblems in 12.1, so all four
+// divisions of a tier share one image.
+//
+// Emerald (added in 13.x) wasn't in the source repo; we render diamond.png
+// with a green hue-rotate to approximate it until a real PNG is dropped in.
 type Props = {
   tier: string;
   size?: number;
@@ -14,7 +15,8 @@ type Props = {
 const { tier, size = 24, class: className = '' }: Props = $props();
 
 const tierKey = $derived(tier.toLowerCase());
-const src = $derived(`${EMBLEM_BASE}/emblem-${tierKey}.png`);
+const isEmerald = $derived(tierKey === 'emerald');
+const src = $derived(`/ranks/${isEmerald ? 'diamond' : tierKey}.png`);
 const label = $derived(`${tier.charAt(0)}${tier.slice(1).toLowerCase()} emblem`);
 </script>
 
@@ -26,6 +28,7 @@ const label = $derived(`${tier.charAt(0)}${tier.slice(1).toLowerCase()} emblem`)
   loading="lazy"
   decoding="async"
   class="inline-block align-middle {className}"
+  style:filter={isEmerald ? 'hue-rotate(80deg) saturate(1.3)' : undefined}
   onerror={(e) => {
     (e.currentTarget as HTMLImageElement).style.visibility = 'hidden';
   }}
