@@ -11,10 +11,12 @@ export const GET: RequestHandler = async ({ url, platform }) => {
   const doRes = await stub.fetch('https://estimate-job/status', { method: 'GET' });
 
   if (doRes.status === 404) {
+    console.warn('[mmr/status] job not found', { jobId: id });
     return json({ stage: 'not_found' as const, message: 'Job not found' }, { status: 404 });
   }
 
-  const body = await doRes.json();
+  const body = (await doRes.json()) as { stage?: string };
+  console.log('[mmr/status]', { jobId: id, stage: body.stage });
   return json(body, {
     headers: { 'Cache-Control': 'no-store' },
   });

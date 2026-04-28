@@ -98,10 +98,11 @@ export class EstimateJobDO {
         existing.stage === 'done' || existing.stage === 'error' || existing.stage === 'unranked';
       const isStale = now - existing.updatedAt > STALE_JOB_MS;
       if (isTerminal || isStale) {
+        console.log('[EstimateJobDO] resetting', { stage: existing.stage, isStale });
         await this.reset();
       } else {
         // In-flight — return current status, don't restart
-        return Response.json({ stage: existing.stage, jobId: this.state.id.toString() });
+        return Response.json({ stage: existing.stage });
       }
     }
 
@@ -118,7 +119,8 @@ export class EstimateJobDO {
     await this.state.storage.put('params', params);
     await this.state.storage.setAlarm(now);
 
-    return Response.json({ stage: 'queued', jobId: this.state.id.toString() });
+    console.log('[EstimateJobDO] queued', { region: params.region, queue: params.queue });
+    return Response.json({ stage: 'queued' });
   }
 
   private async handleStatus(): Promise<Response> {
@@ -135,8 +137,17 @@ export class EstimateJobDO {
   async alarm(): Promise<void> {
     const status = await this.state.storage.get<JobStatus>('status');
     const params = await this.state.storage.get<JobParams>('params');
-    if (!status || !params) return;
+    if (!status || !params) {
+      console.warn('[EstimateJobDO] alarm fired with no state');
+      return;
+    }
     if (status.stage === 'done' || status.stage === 'error' || status.stage === 'unranked') return;
+
+    console.log('[EstimateJobDO] alarm', {
+      stage: status.stage,
+      processed: status.matchesProcessed,
+      total: status.matchesTotal,
+    });
 
     try {
       if (status.stage === 'queued' || status.stage === 'resolving_account') {
@@ -148,7 +159,7 @@ export class EstimateJobDO {
       }
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.error('[EstimateJobDO]', errMsg, err);
+      console.error('[EstimateJobDO] alarm failed', { stage: status.stage, error: errMsg }, err);
       await this.update({
         ...status,
         stage: 'error',
