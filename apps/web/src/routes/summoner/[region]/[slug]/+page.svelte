@@ -1,4 +1,5 @@
 <script lang="ts">
+import { mmrToRankLabel, rankToMmr } from '@mmr-calculator/core';
 import type { PageData } from './$types';
 
 type MmrApiResult = {
@@ -201,19 +202,6 @@ function formatWinrate(wins: number, losses: number): string {
   return `${Math.round((wins / total) * 100)}%`;
 }
 
-function mmrLabel(mu: number): string {
-  if (mu < 800) return 'Iron';
-  if (mu < 1000) return 'Bronze';
-  if (mu < 1200) return 'Silver';
-  if (mu < 1400) return 'Gold';
-  if (mu < 1600) return 'Platinum';
-  if (mu < 1800) return 'Emerald';
-  if (mu < 2000) return 'Diamond';
-  if (mu < 2400) return 'Master';
-  if (mu < 2800) return 'Grandmaster';
-  return 'Challenger';
-}
-
 // Map mu/ci90 onto a fixed 0–3000 axis so the CI bar is comparable across players.
 const AXIS_MIN = 0;
 const AXIS_MAX = 3000;
@@ -370,10 +358,15 @@ function axisPct(mmrValue: number): number {
           <span class="numeric text-[var(--color-ink-faint)] text-base">MMR</span>
         </div>
 
-        <p class="font-mono text-sm text-[var(--color-ink-muted)] mb-8">
+        <p class="font-mono text-sm text-[var(--color-ink-muted)] mb-2">
           CI<sub class="numeric">90</sub> = <span class="text-[var(--color-ink)]">{mmr.ci90[0].toLocaleString()} — {mmr.ci90[1].toLocaleString()}</span>
           &nbsp;·&nbsp; σ = <span class="text-[var(--color-ink)]">{mmr.sigma}</span>
-          &nbsp;·&nbsp; {mmrLabel(mmr.mu)} range
+        </p>
+        <p class="font-mono text-xs text-[var(--color-ink-faint)] mb-8">
+          → {mmrToRankLabel(mmr.ci90[0])}
+          &nbsp;to&nbsp;
+          {mmrToRankLabel(mmr.ci90[1])}
+          &nbsp;·&nbsp; μ at <span class="text-[var(--color-ink-muted)]">{mmrToRankLabel(mmr.mu)}</span>
         </p>
 
         <!-- Real CI visualization -->
@@ -436,10 +429,12 @@ function axisPct(mmrValue: number): number {
             <dt class="label-mono">winrate</dt>
             <dd class="numeric text-[var(--color-ink)]">{winrate}</dd>
           </div>
+          {@const rankMmr = rankToMmr(rank.tier, rank.division, rank.lp)}
+          {@const muGap = mmr.mu - rankMmr}
           <div class="flex items-baseline justify-between">
             <dt class="label-mono">μ − rank</dt>
-            <dd class="numeric {mmr.mu - (rank.lp + 0) > 30 ? 'text-[var(--color-good)]' : mmr.mu - rank.lp < -30 ? 'text-[var(--color-bad)]' : 'text-[var(--color-ink)]'}">
-              {(mmr.mu - rank.lp) > 0 ? '+' : ''}{Math.round(mmr.mu - rank.lp)}
+            <dd class="numeric {muGap > 30 ? 'text-[var(--color-good)]' : muGap < -30 ? 'text-[var(--color-bad)]' : 'text-[var(--color-ink)]'}">
+              {muGap > 0 ? '+' : ''}{Math.round(muGap)}
             </dd>
           </div>
         </dl>
