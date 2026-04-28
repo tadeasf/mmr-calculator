@@ -1,4 +1,6 @@
 <script lang="ts">
+import { mmrToRankLabel as mmrLabel } from '@mmr-calculator/core';
+
 const REGIONS = [
   { value: 'na', label: 'NA' },
   { value: 'euw', label: 'EUW' },
@@ -148,8 +150,8 @@ function diffNumber(): number {
 </script>
 
 <svelte:head>
-  <title>Compare — two-player MMR diff</title>
-  <meta name="description" content="Compare the MMR estimates of two League of Legends players side by side, with confidence intervals and the gap between them." />
+  <title>Compare — two-player climb forecast</title>
+  <meta name="description" content="Compare the projected climb ceiling of two League of Legends players side by side, with rank brackets and confidence intervals." />
 </svelte:head>
 
 <div class="max-w-[1180px] mx-auto px-6 pt-16 pb-24">
@@ -163,8 +165,8 @@ function diffNumber(): number {
     Compare two players.
   </h1>
   <p class="text-[var(--color-ink-muted)] text-lg leading-relaxed mb-12 max-w-2xl">
-    Run two estimates in parallel, see the gap. Each player gets the same three-tier treatment;
-    the difference is calculated only when both jobs finish.
+    Run two forecasts in parallel, see the gap. Each player gets the same three-tier treatment;
+    the difference is shown as rank brackets only when both jobs finish.
   </p>
 
   <!-- Input row -->
@@ -253,16 +255,16 @@ function diffNumber(): number {
             <p class="font-mono text-sm text-[var(--color-ink-muted)] mb-3">
               {player.summoner.riotId}<span class="text-[var(--color-ink-faint)]">#{player.summoner.tag}</span>
             </p>
-            <div class="flex items-baseline gap-3 mb-1">
-              <span class="numeric text-[64px] text-[var(--color-ink)] leading-none">{player.mmr.mu.toLocaleString()}</span>
-              <span class="numeric text-sm text-[var(--color-ink-faint)]">MMR</span>
-            </div>
+            <p class="label-mono mb-2">[ projected ceiling ]</p>
+            <p class="display-serif text-3xl text-[var(--color-ink)] leading-tight mb-1">
+              {mmrLabel(player.mmr.mu)}
+            </p>
             <p class="numeric text-xs text-[var(--color-ink-faint)] mb-5">
-              CI<sub>90</sub> {player.mmr.ci90[0]} — {player.mmr.ci90[1]} &nbsp;·&nbsp; σ {player.mmr.sigma}
+              CI<sub>90</sub> {mmrLabel(player.mmr.ci90[0])} — {mmrLabel(player.mmr.ci90[1])}
             </p>
             {#if player.rank}
               <p class="font-mono text-xs text-[var(--color-ink-muted)] mb-3">
-                {player.rank.tier.charAt(0) + player.rank.tier.slice(1).toLowerCase()}
+                visible: {player.rank.tier.charAt(0) + player.rank.tier.slice(1).toLowerCase()}
                 {['MASTER','GRANDMASTER','CHALLENGER'].includes(player.rank.tier.toUpperCase()) ? '' : player.rank.division}
                 · <span class="numeric text-[var(--color-ink)]">{player.rank.lp}</span> LP
               </p>
@@ -277,18 +279,18 @@ function diffNumber(): number {
 
     {#if results.a?.mmr && results.b?.mmr}
       {@const diff = diffNumber()}
+      {@const verdict =
+        Math.abs(diff) <= 50
+          ? 'Effectively the same projected ceiling — within the irreducible-noise floor.'
+          : Math.abs(diff) <= 150
+            ? 'Small but meaningful gap — about one division apart.'
+            : 'Significant difference — multiple divisions apart.'}
       <div class="surface p-8 mt-px text-center">
-        <p class="label-mono mb-3">[ Δ MMR · A − B ]</p>
-        <p class="numeric text-[80px] leading-none {diff === 0 ? 'text-[var(--color-ink)]' : diff > 0 ? 'text-[var(--color-good)]' : 'text-[var(--color-bad)]'}">
-          {diff > 0 ? '+' : ''}{diff}
+        <p class="label-mono mb-3">[ ceiling diff · A vs B ]</p>
+        <p class="display-serif text-3xl {diff === 0 ? 'text-[var(--color-ink)]' : diff > 0 ? 'text-[var(--color-good)]' : 'text-[var(--color-bad)]'} leading-tight">
+          {diff > 0 ? 'A ceiling is higher' : diff < 0 ? 'B ceiling is higher' : 'Same ceiling'}
         </p>
-        <p class="text-[var(--color-ink-muted)] text-sm mt-3 max-w-md mx-auto">
-          {Math.abs(diff) <= 50
-            ? 'Effectively the same MMR range — smaller than the irreducible-noise floor.'
-            : Math.abs(diff) <= 150
-              ? 'Small but meaningful gap — about one division of MMR.'
-              : 'Significant difference — multiple divisions apart.'}
-        </p>
+        <p class="text-[var(--color-ink-muted)] text-sm mt-3 max-w-md mx-auto">{verdict}</p>
       </div>
     {/if}
   {/if}

@@ -30,6 +30,19 @@ type MmrApiResult = {
     enemyMmrSpread: number;
     verdict: 'balanced' | 'unfavorable' | 'favorable';
   };
+  climbProjection?: {
+    ceilingLabel: string;
+    steps: Array<{
+      label: string;
+      games: number;
+      days: number;
+      decayedWinrate: number;
+      beyondCeiling: boolean;
+    }>;
+    netLpPerGame: number;
+    baselineWinrate: number;
+    notes: string[];
+  };
   message?: string;
 };
 
@@ -217,18 +230,20 @@ function formatWinrate(wins: number, losses: number): string {
   return `${Math.round((wins / total) * 100)}%`;
 }
 
-// Map mu/ci90 onto a fixed 0–3000 axis so the CI bar is comparable across players.
-const AXIS_MIN = 0;
-const AXIS_MAX = 3000;
-function axisPct(mmrValue: number): number {
-  const clamped = Math.max(AXIS_MIN, Math.min(AXIS_MAX, mmrValue));
-  return ((clamped - AXIS_MIN) / (AXIS_MAX - AXIS_MIN)) * 100;
+// Parse a display rank label like "Platinum III" or "Master+ 240 LP" into
+// [tier, division] tuples that rankToMmr accepts. Apex labels collapse to
+// the tier with empty division (rankToMmr treats apex specially).
+function parseRankLabel(label: string): [string, string] {
+  const trimmed = label.trim();
+  if (trimmed.startsWith('Master')) return ['MASTER', ''];
+  const [tier, div = ''] = trimmed.split(/\s+/);
+  return [tier.toUpperCase(), div.toUpperCase()];
 }
 </script>
 
 <svelte:head>
-  <title>{riotId}#{tag} — MMR estimate · {region.toUpperCase()} {queue === 'flex' ? 'Flex' : 'Solo'}</title>
-  <meta name="description" content="MMR estimate for {riotId}#{tag} on {region.toUpperCase()}. Three-tier estimator with calibrated 90% confidence interval." />
+  <title>{riotId}#{tag} — climb forecast · {region.toUpperCase()} {queue === 'flex' ? 'Flex' : 'Solo'}</title>
+  <meta name="description" content="Climb forecast for {riotId}#{tag} on {region.toUpperCase()}. Projected ceiling rank, ETAs, lobby quality, and LP pace — calibrated 90% confidence interval." />
 </svelte:head>
 
 <div class="max-w-[1180px] mx-auto px-6 py-10">
@@ -375,145 +390,116 @@ function axisPct(mmrValue: number): number {
   {:else if result?.mmr && result?.rank}
     {@const mmr = result.mmr}
     {@const rank = result.rank}
+    {@const projection = result.climbProjection}
     {@const winrate = formatWinrate(rank.wins, rank.losses)}
-    {@const muPct = axisPct(mmr.mu)}
-    {@const ciLowPct = axisPct(mmr.ci90[0])}
-    {@const ciHighPct = axisPct(mmr.ci90[1])}
     {@const rankMmr = rankToMmr(rank.tier, rank.division, rank.lp)}
     {@const muGap = mmr.mu - rankMmr}
-    {@const muTier = mmrToTier(mmr.mu)}
-    {@const muRankLabel = mmrToRankLabel(mmr.mu)}
-    {@const gapDescriptor =
+    {@const ceilingTier = projection ? mmrToTier(rankToMmr(...parseRankLabel(projection.ceilingLabel), 0)) : mmrToTier(mmr.mu)}
+    {@const ciLowLabel = mmrToRankLabel(mmr.ci90[0])}
+    {@const ciHighLabel = mmrToRankLabel(mmr.ci90[1])}
+    {@const ciLowTier = mmrToTier(mmr.ci90[0])}
+    {@const ciHighTier = mmrToTier(mmr.ci90[1])}
+    {@const ceilingDescriptor =
       muGap > 100
-        ? `≈ ${Math.round(muGap / 100)} division${Math.round(muGap / 100) === 1 ? '' : 's'} above rank`
+        ? `≈ ${Math.round(muGap / 100)} division${Math.round(muGap / 100) === 1 ? '' : 's'} above visible rank`
         : muGap > 30
           ? 'above visible rank'
           : muGap < -100
-            ? `≈ ${Math.round(-muGap / 100)} division${Math.round(-muGap / 100) === 1 ? '' : 's'} below rank`
+            ? `≈ ${Math.round(-muGap / 100)} division${Math.round(-muGap / 100) === 1 ? '' : 's'} below visible rank`
             : muGap < -30
               ? 'below visible rank'
-              : 'aligned with rank'}
+              : 'aligned with visible rank'}
     {@const gapColor =
       muGap > 30 ? 'var(--color-good)' : muGap < -30 ? 'var(--color-bad)' : 'var(--color-ink-muted)'}
 
-    <!-- Hero: μ and CI visualization -->
+    <!-- Hero: climb projection -->
     <section class="grid grid-cols-12 gap-px bg-[var(--color-rule)] surface mb-px overflow-hidden rise">
-      <!-- Main number -->
+      <!-- Main projection column -->
       <div class="col-span-12 lg:col-span-8 bg-[var(--color-surface-1)] p-8 sm:p-10 relative tick-rule">
         <div class="flex items-baseline justify-between mb-6">
-          <span class="label-mono">[ result · μ ± σ ]</span>
+          <span class="label-mono">[ projected ceiling · this season ]</span>
           <button onclick={refresh} class="btn-ghost">↻ Refresh</button>
         </div>
 
-        <div class="flex items-baseline gap-4 mb-1">
-          <span class="numeric text-[88px] sm:text-[112px] lg:text-[144px] text-[var(--color-ink)] leading-[0.85]">
-            {mmr.mu.toLocaleString()}
-          </span>
-          <span class="numeric text-[var(--color-ink-faint)] text-base">MMR</span>
-        </div>
+        {#if projection}
+          <div class="flex items-center gap-6 sm:gap-8 mb-6">
+            <RankEmblem tier={ceilingTier} size={144} />
+            <div>
+              <p class="label-mono mb-2">you can realistically reach</p>
+              <p class="display-serif text-5xl sm:text-6xl lg:text-7xl {tierColor(ceilingTier)} leading-[0.9]">
+                {projection.ceilingLabel}
+              </p>
+              <p class="font-mono text-sm text-[var(--color-ink-muted)] mt-3" style:color={gapColor}>
+                {ceilingDescriptor}
+              </p>
+            </div>
+          </div>
 
-        <p class="font-mono text-sm text-[var(--color-ink-muted)] mb-2">
-          CI<sub class="numeric">90</sub> = <span class="text-[var(--color-ink)]">{mmr.ci90[0].toLocaleString()} — {mmr.ci90[1].toLocaleString()}</span>
-          &nbsp;·&nbsp; σ = <span class="text-[var(--color-ink)]">{mmr.sigma}</span>
-        </p>
-        <p class="font-mono text-sm text-[var(--color-ink-faint)] mb-8 flex flex-wrap items-center gap-x-2 gap-y-2">
-          <span>→</span>
-          <RankEmblem tier={mmrToTier(mmr.ci90[0])} size={28} />
-          <span>{mmrToRankLabel(mmr.ci90[0])}</span>
-          <span class="text-[var(--color-ink-trace)]">to</span>
-          <RankEmblem tier={mmrToTier(mmr.ci90[1])} size={28} />
-          <span>{mmrToRankLabel(mmr.ci90[1])}</span>
-          <span class="text-[var(--color-ink-trace)]">·</span>
-          <span>μ at</span>
-          <RankEmblem tier={mmrToTier(mmr.mu)} size={28} />
-          <span class="text-[var(--color-ink-muted)]">{mmrToRankLabel(mmr.mu)}</span>
-        </p>
-
-        <!-- Real CI visualization -->
-        <div class="relative pt-8 pb-10 mt-4">
-          <!-- Axis with major + minor ticks -->
-          <div class="absolute inset-x-0 top-1/2 h-px bg-[var(--color-rule-soft)]"></div>
-          {#each [0, 500, 1000, 1500, 2000, 2500, 3000] as tick}
-            <div class="absolute top-1/2 w-px h-2 -mt-1 bg-[var(--color-ink-trace)]" style="left: {axisPct(tick)}%"></div>
-            <div class="absolute label-mono numeric -translate-x-1/2 top-[calc(50%+10px)]" style="left: {axisPct(tick)}%">{tick === 0 ? '0' : `${tick / 1000}k`}</div>
-          {/each}
-
-          <!-- CI band -->
-          <div
-            class="absolute top-1/2 h-3 -mt-1.5 bg-[var(--color-signal-strong)]/15 border-l border-r border-[var(--color-signal-strong)]"
-            style="left: {ciLowPct}%; right: {100 - ciHighPct}%"
-          ></div>
-          <!-- mu marker -->
-          <div
-            class="absolute top-1/2 w-[2px] h-7 -mt-3.5 -ml-px bg-[var(--color-signal-strong)] shadow-[0_0_8px_rgba(34,211,238,0.6)]"
-            style="left: {muPct}%"
-          ></div>
-          <!-- mu label above -->
-          <div class="absolute -top-1 numeric text-xs text-[var(--color-signal)] -translate-x-1/2" style="left: {muPct}%">μ {mmr.mu}</div>
-        </div>
+          <p class="font-mono text-sm text-[var(--color-ink-faint)] mb-6 flex flex-wrap items-center gap-x-2 gap-y-2">
+            <span class="label-mono">CI<sub class="numeric">90</sub></span>
+            <RankEmblem tier={ciLowTier} size={24} />
+            <span>{ciLowLabel}</span>
+            <span class="text-[var(--color-ink-trace)]">to</span>
+            <RankEmblem tier={ciHighTier} size={24} />
+            <span>{ciHighLabel}</span>
+          </p>
+        {/if}
 
         <!-- Status chips -->
-        <div class="flex flex-wrap gap-2 mt-6">
+        <div class="flex flex-wrap gap-2 mb-8">
           <span class={confidenceChip(mmr.confidence)}>
             <span class="led" style="background: currentColor; box-shadow: 0 0 6px currentColor"></span>
             {mmr.confidence} confidence
           </span>
           {#if Math.abs(muGap) > 30}
             <span class={muGap > 0 ? 'chip chip-good' : 'chip chip-bad'}>
-              {muGap > 0 ? '↑' : '↓'} {muGap > 0 ? '+' : ''}{Math.round(muGap)} vs visible rank
+              {muGap > 0 ? '↑ trending up' : '↓ trending down'}
             </span>
           {/if}
           {#if mmr.lobbiesUsed > 0}
             <span class="chip">{mmr.lobbiesUsed} lobbies analysed</span>
           {/if}
-          {#if result.smurfFlag && result.smurfFlag.score >= 0.3}
-            <span class="chip chip-warn">⚠ smurf signals</span>
-          {/if}
         </div>
 
-        <!-- BIG visible-vs-MMR comparison: stacked emblems with delta in the middle -->
-        <div class="mt-10 pt-8 border-t border-[var(--color-rule)]">
-          <div class="flex items-center justify-between gap-4 mb-2">
-            <span class="label-mono">[ visible ]</span>
-            <span class="label-mono text-[var(--color-ink-faint)]">vs</span>
-            <span class="label-mono text-right">[ μ-implied ]</span>
+        {#if projection && projection.steps.length > 0}
+          <!-- Climb path: each reachable bracket as a step -->
+          <div class="pt-8 border-t border-[var(--color-rule)]">
+            <div class="flex items-baseline justify-between mb-5">
+              <span class="label-mono">[ climb path · {projection.baselineWinrate * 100}% wr ]</span>
+              <span class="label-mono">net {projection.netLpPerGame > 0 ? '+' : ''}{projection.netLpPerGame} LP / game</span>
+            </div>
+            <ol class="space-y-px bg-[var(--color-rule)] surface-deep overflow-hidden">
+              {#each projection.steps as step}
+                {@const stepTier = mmrToTier(rankToMmr(...parseRankLabel(step.label), 0))}
+                <li class="bg-[var(--color-surface-1)] px-4 py-3 flex items-center gap-4">
+                  <RankEmblem tier={stepTier} size={40} />
+                  <div class="flex-1 min-w-0">
+                    <p class="display-serif text-xl {tierColor(stepTier)} leading-tight">
+                      {step.label}
+                      {#if step.beyondCeiling}
+                        <span class="chip chip-warn ml-2 align-middle">stretch</span>
+                      {/if}
+                    </p>
+                    <p class="label-mono mt-0.5">
+                      ~{step.decayedWinrate}% projected wr at this bracket
+                    </p>
+                  </div>
+                  <div class="text-right">
+                    <p class="numeric text-lg text-[var(--color-ink)]">≈ {step.games} <span class="text-[var(--color-ink-faint)] text-xs">games</span></p>
+                    <p class="numeric text-xs text-[var(--color-ink-muted)]">≈ {step.days} days</p>
+                  </div>
+                </li>
+              {/each}
+            </ol>
+            {#if projection.notes.length > 0}
+              <ul class="mt-3 space-y-1">
+                {#each projection.notes as note}
+                  <li class="text-xs text-[var(--color-ink-faint)] leading-relaxed">→ {note}</li>
+                {/each}
+              </ul>
+            {/if}
           </div>
-          <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-4 sm:gap-8">
-            <!-- Visible rank, vertical stack -->
-            <div class="flex flex-col items-center text-center">
-              <RankEmblem tier={rank.tier} size={144} />
-              <p class="display-serif text-3xl sm:text-4xl {tierColor(rank.tier)} mt-3 leading-tight">
-                {rank.tier.charAt(0) + rank.tier.slice(1).toLowerCase()}
-                {#if !['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(rank.tier.toUpperCase())}
-                  <span class="numeric not-italic font-sans">{rank.division}</span>
-                {/if}
-              </p>
-              <p class="numeric text-sm text-[var(--color-ink-muted)] mt-1">{rank.lp} LP</p>
-            </div>
-
-            <!-- Big delta in the middle -->
-            <div class="flex flex-col items-center text-center min-w-[88px]">
-              <span class="numeric text-4xl sm:text-5xl leading-none" style:color={gapColor}>
-                {muGap > 0 ? '↑' : muGap < 0 ? '↓' : '='}
-              </span>
-              <span class="numeric text-2xl sm:text-3xl mt-2" style:color={gapColor}>
-                {muGap > 0 ? '+' : ''}{Math.round(muGap)}
-              </span>
-              <span class="label-mono mt-1 leading-tight max-w-[120px]" style:color={gapColor}>
-                {gapDescriptor}
-              </span>
-            </div>
-
-            <!-- MMR-implied rank, vertical stack -->
-            <div class="flex flex-col items-center text-center">
-              <RankEmblem tier={muTier} size={144} />
-              <p class="display-serif text-3xl sm:text-4xl {tierColor(muTier)} mt-3 leading-tight">
-                {muRankLabel}
-              </p>
-              <p class="numeric text-sm text-[var(--color-ink-muted)] mt-1">μ {mmr.mu}</p>
-            </div>
-          </div>
-        </div>
+        {/if}
       </div>
 
       <!-- Visible-rank side panel: emblem stacked on top, then label -->
@@ -546,7 +532,7 @@ function axisPct(mmrValue: number): number {
       </div>
     </section>
 
-    <!-- Signal breakdown -->
+    <!-- Signal breakdown: how each tier contributed (qualitative, no rating numbers) -->
     {#if result.tier1 || result.tier2}
       <section class="surface p-6 sm:p-8 mb-px rise" style="animation-delay: 80ms">
         <div class="flex items-baseline justify-between mb-6">
@@ -562,16 +548,15 @@ function axisPct(mmrValue: number): number {
                 <span class="label-mono">{result.tier1.sampleSize} games</span>
               </div>
               <h4 class="display-serif text-2xl text-[var(--color-ink)] mb-4">Win behavior</h4>
-              <dl class="space-y-2 text-sm">
-                <div class="flex items-baseline justify-between border-b border-[var(--color-rule)] pb-2">
-                  <dt class="label-mono">Δ μ</dt>
-                  <dd class="numeric text-[var(--color-ink)]">{result.tier1.gapMu > 0 ? '+' : ''}{result.tier1.gapMu}</dd>
-                </div>
-                <div class="flex items-baseline justify-between">
-                  <dt class="label-mono">σ</dt>
-                  <dd class="numeric text-[var(--color-ink)]">{result.tier1.gapSigma}</dd>
-                </div>
-              </dl>
+              <p class="text-sm text-[var(--color-ink-muted)] leading-relaxed">
+                {#if Math.abs(result.tier1.gapMu) <= 30}
+                  Win rate is consistent with your bracket median — the LP signal is neutral.
+                {:else if result.tier1.gapMu > 0}
+                  Win rate trends above 50% — the matchmaker is treating you as roughly above your bracket median.
+                {:else}
+                  Win rate trends below 50% — the matchmaker has been giving you tougher lobbies than your bracket median.
+                {/if}
+              </p>
             </article>
           {/if}
 
@@ -582,16 +567,11 @@ function axisPct(mmrValue: number): number {
                 <span class="label-mono">{result.tier2.lobbies.length} lobbies</span>
               </div>
               <h4 class="display-serif text-2xl text-[var(--color-ink)] mb-4">Lobby composition</h4>
-              <dl class="space-y-2 text-sm">
-                <div class="flex items-baseline justify-between border-b border-[var(--color-rule)] pb-2">
-                  <dt class="label-mono">μ</dt>
-                  <dd class="numeric text-[var(--color-ink)]">{result.tier2.mu}</dd>
-                </div>
-                <div class="flex items-baseline justify-between">
-                  <dt class="label-mono">σ</dt>
-                  <dd class="numeric text-[var(--color-ink)]">{result.tier2.sigma}</dd>
-                </div>
-              </dl>
+              <p class="text-sm text-[var(--color-ink-muted)] leading-relaxed">
+                Aggregated across {result.tier2.lobbies.length} valid lobby{result.tier2.lobbies.length === 1 ? '' : 's'}, the typical
+                opponent rank in your recent games sits at <strong class="text-[var(--color-ink)]">{mmrToRankLabel(result.tier2.mu)}</strong>.
+                Confidence band: {mmrToRankLabel(result.tier2.mu - result.tier2.sigma)} — {mmrToRankLabel(result.tier2.mu + result.tier2.sigma)}.
+              </p>
             </article>
           {/if}
         </div>
@@ -621,9 +601,9 @@ function axisPct(mmrValue: number): number {
               </div>
             </dl>
             {#if result.lpEfficiency.breakEvenWinrate > 0.52}
-              <p class="text-xs text-[var(--color-warn)] leading-relaxed">→ LP system thinks you're below your true MMR; you're earning less per win than you should be.</p>
+              <p class="text-xs text-[var(--color-warn)] leading-relaxed">→ LP gain is below LP loss — the matchmaker rates you below your visible rank, so you need a higher win rate to net positive LP.</p>
             {:else if result.lpEfficiency.breakEvenWinrate < 0.48}
-              <p class="text-xs text-[var(--color-good)] leading-relaxed">→ LP rewards each win more than each loss costs — likely above your true MMR.</p>
+              <p class="text-xs text-[var(--color-good)] leading-relaxed">→ LP gain exceeds LP loss — you're trending above your visible rank, climb is in progress.</p>
             {/if}
           </div>
         {/if}
@@ -653,10 +633,12 @@ function axisPct(mmrValue: number): number {
       {@const fs = result.fairnessScore}
       {@const verdictHint =
         fs.verdict === 'favorable'
-          ? 'enemies averaged lower MMR than your team'
+          ? 'enemy lobbies trended weaker than your team on average — climb-friendly conditions'
           : fs.verdict === 'unfavorable'
-          ? 'enemies averaged higher MMR than your team'
-          : 'team and enemy averages within ±30 MMR'}
+          ? 'enemy lobbies trended stronger than your team on average — climb-resistant conditions'
+          : 'team and enemy strength roughly matched in recent games'}
+      {@const spreadDescriptor = (n: number) =>
+        n < 100 ? 'tight' : n < 200 ? 'normal' : n < 350 ? 'wide' : 'very wide'}
       <section class="surface p-6 sm:p-7 mb-px rise" style="animation-delay: 240ms">
         <div class="flex items-baseline justify-between mb-4">
           <span class="label-mono">[ lobby fairness · last {mmr.lobbiesUsed} games ]</span>
@@ -667,11 +649,11 @@ function axisPct(mmrValue: number): number {
         <dl class="grid grid-cols-2 gap-6 text-sm mb-3">
           <div class="flex items-baseline justify-between border-b border-[var(--color-rule)] pb-2">
             <dt class="label-mono">your team spread</dt>
-            <dd class="numeric text-[var(--color-ink)]">{fs.teamMmrSpread} MMR</dd>
+            <dd class="text-[var(--color-ink)]">{spreadDescriptor(fs.teamMmrSpread)}</dd>
           </div>
           <div class="flex items-baseline justify-between border-b border-[var(--color-rule)] pb-2">
             <dt class="label-mono">enemy team spread</dt>
-            <dd class="numeric text-[var(--color-ink)]">{fs.enemyMmrSpread} MMR</dd>
+            <dd class="text-[var(--color-ink)]">{spreadDescriptor(fs.enemyMmrSpread)}</dd>
           </div>
         </dl>
         <p class="text-xs text-[var(--color-ink-faint)] leading-relaxed">→ {verdictHint}</p>

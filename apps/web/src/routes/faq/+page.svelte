@@ -1,12 +1,12 @@
 <script lang="ts">
 const FAQ = [
   {
-    q: 'Why does your number differ from other MMR sites?',
-    a: "Most sites use a winrate-based multiplier — they take your WR, multiply by a constant, call it MMR. That's not how Riot's matchmaker works. Our number comes from the people in your lobbies, not a formula applied to your stats page.",
+    q: 'What does Climb Lab actually tell me?',
+    a: "The rank you can realistically reach this season at your current pace, the games it'll take, and where matchmaking quality is helping or hurting. Outputs are rank brackets and ETAs — never a fake-precise rating number.",
   },
   {
     q: 'Why is my confidence interval so wide?',
-    a: "Wide CI means we don't have enough data to be precise. This happens when: you have very few ranked games, your recent games had many unranked participants (which we skip), or your LP behavior has been inconsistent. Play more games in the same queue to tighten the estimate.",
+    a: "Wide CI means we don't have enough data to be precise. This happens when: you have very few ranked games, your recent games had many unranked participants (which we skip), or your LP behavior has been inconsistent. Play more games in the same queue to tighten the projection.",
   },
   {
     q: 'Why does the page say "Pulling your match history" for so long?',
@@ -17,35 +17,35 @@ const FAQ = [
     a: 'Results are cached for 1 hour by default. A "Refresh" button on the result page kicks off a fresh job that re-pulls your last 20 games directly from Riot. Cached results render instantly.',
   },
   {
-    q: 'Why does my MMR seem lower than my visible rank?',
-    a: "If estimated MMR sits below your visible rank MMR, the lobby data suggests you're being matched with players a tick below your rank. This is common after a hotstreak that pushed you up faster than the matchmaker followed — typical in early-season placements.",
-  },
-  {
-    q: 'What does the "smurf signals" badge mean?',
-    a: "A combination of very high winrate, few games, and a large MMR-vs-rank gap can indicate a smurf. The badge appears when the score crosses a threshold. It doesn't prove smurfing — some players are just on a streak — but the LP system probably hasn't caught up yet, so estimates may shift a lot game-to-game.",
+    q: 'Why does my projected ceiling differ from my visible rank?',
+    a: "If the projected ceiling sits above your visible rank, recent lobby quality suggests you're playing against a stronger field than your rank reflects — climb is likely. If it sits below, the matchmaker is matching you with a slightly easier field than your rank, suggesting recent performance hasn't kept pace. Common after hotstreaks or a slump.",
   },
   {
     q: 'Is this affiliated with Riot Games?',
-    a: 'No. This tool uses the Riot Games API under their developer terms and is not endorsed by or affiliated with Riot Games. All League of Legends trademarks are property of Riot Games, Inc.',
+    a: "No. Climb Lab isn't endorsed by Riot Games and doesn't reflect the views or opinions of Riot Games. All League of Legends trademarks are property of Riot Games, Inc. Data is accessed through the public Riot Games API under their developer terms.",
   },
   {
-    q: 'How accurate is the estimate, really?',
-    a: "The 90% CI is calibrated to contain the true MMR 90% of the time, assuming Riot's matchmaking uses MMR the way we model it. Accuracy degrades for: very new accounts (provisional MMR), ARAM-only players (separate ladder), and accounts with fewer than ~10 games. The confidence chip tells you how much to trust each specific estimate.",
+    q: 'How accurate is the projection, really?',
+    a: 'The 90% CI is calibrated to contain the realistic ceiling 90% of the time, assuming matchmaking quality stays roughly consistent with the last 20 games. Accuracy degrades for: very new accounts (provisional matchmaking), ARAM-only players (separate queue), and accounts with fewer than ~10 ranked games. The confidence chip tells you how much to trust each specific projection.',
   },
   {
     q: "My LP gain/loss doesn't match the predicted efficiency.",
-    a: "LP gain is also affected by provisional status, seasonal adjustments, and Riot's internal variance. Our LP efficiency is an approximation from the MMR gap, not a readout of Riot's formula. Directionally correct; not exact.",
+    a: "LP gain is also affected by provisional status, seasonal adjustments, and Riot's internal variance. Our LP efficiency model is an approximation from observed gain/loss, not a readout of Riot's formula. Directionally correct; not exact.",
   },
   {
     q: 'Does this work for Flex queue?',
-    a: 'Yes — pick Flex when you query. Flex MMR is tracked separately from Solo/Duo. Lobby composition still applies, though Flex lobbies have wider rank spreads, so confidence often lands at medium or low.',
+    a: 'Yes — pick Flex when you query. Flex matchmaking is tracked separately from Solo/Duo. Lobby composition still applies, though Flex lobbies have wider rank spreads, so confidence often lands at medium or low.',
+  },
+  {
+    q: 'Why no skill-rating number on the result page?',
+    a: 'By design. The internal estimate is a (μ, σ) pair, but exposing it as a single number creates the illusion of precision — and Riot has been clear that its internal matchmaking values are intentionally not public. Climb Lab returns rank-bracket forecasts and ETAs, which are more honest and more useful.',
   },
 ];
 </script>
 
 <svelte:head>
-  <title>FAQ — MMR Estimator</title>
-  <meta name="description" content="Things people actually ask: confidence intervals, data freshness, accuracy bounds, and how this differs from winrate-multiplier MMR sites." />
+  <title>FAQ — Climb Lab</title>
+  <meta name="description" content="Things people actually ask about Climb Lab: confidence intervals, data freshness, accuracy bounds, and how the climb forecast differs from a single skill-rating readout." />
 </svelte:head>
 
 <div class="max-w-[820px] mx-auto px-6 pt-16 pb-24">
