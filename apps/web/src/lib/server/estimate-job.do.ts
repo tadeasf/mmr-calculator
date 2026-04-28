@@ -5,7 +5,12 @@ import type {
   KVNamespace,
 } from '@cloudflare/workers-types';
 import { createDb } from '@mmr-calculator/db';
-import { RateLimiterClient, type Region, RiotClient } from '@mmr-calculator/riot-client';
+import {
+  RateLimiterClient,
+  type Region,
+  RiotClient,
+  RiotRateLimitError,
+} from '@mmr-calculator/riot-client';
 import {
   type LobbyData,
   MAX_GAMES,
@@ -51,6 +56,9 @@ interface JobStatus {
   error?: string;
   result?: MmrResult;
   summoner?: { puuid: string; riotId: string; tag: string; region: string };
+  // Set when the Riot rate limiter forced a backoff. The DO alarm has been
+  // scheduled for this timestamp; the frontend can show a countdown.
+  rateLimitedUntil?: number;
   startedAt: number;
   updatedAt: number;
 }
@@ -147,6 +155,7 @@ export class EstimateJobDO {
       stage: status.stage,
       processed: status.matchesProcessed,
       total: status.matchesTotal,
+      rateLimitedUntil: status.rateLimitedUntil,
     });
 
     try {
@@ -157,11 +166,41 @@ export class EstimateJobDO {
       } else if (status.stage === 'computing') {
         await this.runFinalize(params, status);
       }
+      // Made progress — clear any stale backoff marker.
+      if (status.rateLimitedUntil) {
+        const fresh = await this.state.storage.get<JobStatus>('status');
+        if (fresh?.rateLimitedUntil) {
+          await this.update({ ...fresh, rateLimitedUntil: undefined });
+        }
+      }
     } catch (err) {
+      // Riot rate-limit isn't a failure — we just need to wait. Reschedule
+      // the alarm at the retry time + a small jitter, leave the stage
+      // unchanged so we resume where we left off, and surface the wait
+      // through `rateLimitedUntil` so the UI can show a countdown. Re-read
+      // status from storage in case the runner advanced it before throwing.
+      const latest = (await this.state.storage.get<JobStatus>('status')) ?? status;
+      if (err instanceof RiotRateLimitError) {
+        const jitterMs = Math.floor(Math.random() * 500);
+        const retryAfterMs = Math.max(1_000, err.retryAfterMs + jitterMs);
+        const retryAt = Date.now() + retryAfterMs;
+        console.warn('[EstimateJobDO] rate-limited; backing off', {
+          stage: latest.stage,
+          retryAfterMs,
+          retryAt,
+        });
+        await this.update({
+          ...latest,
+          rateLimitedUntil: retryAt,
+          message: `Rate limited by Riot — retrying in ${Math.ceil(retryAfterMs / 1000)}s`,
+        });
+        await this.state.storage.setAlarm(retryAt);
+        return;
+      }
       const errMsg = err instanceof Error ? err.message : String(err);
-      console.error('[EstimateJobDO] alarm failed', { stage: status.stage, error: errMsg }, err);
+      console.error('[EstimateJobDO] alarm failed', { stage: latest.stage, error: errMsg }, err);
       await this.update({
-        ...status,
+        ...latest,
         stage: 'error',
         message: 'Computation failed',
         error: errMsg,

@@ -52,6 +52,7 @@ type JobStatus = {
   error?: string;
   result?: MmrApiResult;
   summoner?: { puuid: string; riotId: string; tag: string; region: string };
+  rateLimitedUntil?: number;
 };
 
 const { data }: { data: PageData } = $props();
@@ -65,6 +66,12 @@ let error = $state<string | null>(null);
 let loading = $state(true);
 let job = $state<JobStatus | null>(null);
 let pollHandle = $state<ReturnType<typeof setTimeout> | null>(null);
+let now = $state(Date.now());
+const rateLimitSecondsLeft = $derived(
+  job?.rateLimitedUntil && job.rateLimitedUntil > now
+    ? Math.ceil((job.rateLimitedUntil - now) / 1000)
+    : 0,
+);
 
 const stageLabels: Record<JobStage, string> = {
   queued: 'Queued',
@@ -167,6 +174,13 @@ function refresh() {
   if (pollHandle) clearTimeout(pollHandle);
   startJob();
 }
+
+// Tick the local clock once per second so the rate-limit countdown
+// decrements smoothly between status polls.
+const nowTick = setInterval(() => {
+  now = Date.now();
+}, 1_000);
+$effect(() => () => clearInterval(nowTick));
 
 startJob();
 
@@ -302,6 +316,29 @@ function axisPct(mmrValue: number): number {
           → initialising estimator…
         {/if}
       </p>
+
+      {#if rateLimitSecondsLeft > 0}
+        <div
+          class="mt-6 p-4 border border-[var(--color-warn)]/40 bg-[var(--color-warn)]/5 rounded"
+          role="status"
+          aria-live="polite"
+        >
+          <div class="flex items-baseline justify-between mb-2">
+            <span class="label-mono text-[var(--color-warn)]">
+              <span class="led" style="background: var(--color-warn); box-shadow: 0 0 6px var(--color-warn)"></span>
+              [ riot api rate-limited ]
+            </span>
+            <span class="numeric label-mono text-[var(--color-warn)]">
+              retry in {rateLimitSecondsLeft}s
+            </span>
+          </div>
+          <p class="font-mono text-xs text-[var(--color-ink-muted)] leading-relaxed">
+            We hit Riot's <span class="numeric">100 req / 2 min</span> dev-key limit. The
+            estimator will resume automatically — no action needed. Keep this tab open;
+            job state is persisted server-side in a Durable Object alarm chain.
+          </p>
+        </div>
+      {/if}
 
       <!-- Decorative axis ticks -->
       <div class="mt-10 pt-6 border-t border-[var(--color-rule)] flex items-center gap-3 text-[var(--color-ink-faint)]">
