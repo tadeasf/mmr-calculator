@@ -433,45 +433,70 @@ function axisPct(mmrValue: number): number {
             <span class="chip chip-warn">⚠ smurf signals</span>
           {/if}
         </div>
+
+        <!-- BIG visible-vs-MMR comparison: stacked emblems with delta in the middle -->
+        <div class="mt-10 pt-8 border-t border-[var(--color-rule)]">
+          <div class="flex items-center justify-between gap-4 mb-2">
+            <span class="label-mono">[ visible ]</span>
+            <span class="label-mono text-[var(--color-ink-faint)]">vs</span>
+            <span class="label-mono text-right">[ μ-implied ]</span>
+          </div>
+          <div class="grid grid-cols-[1fr_auto_1fr] items-center gap-4 sm:gap-8">
+            <!-- Visible rank, vertical stack -->
+            <div class="flex flex-col items-center text-center">
+              <RankEmblem tier={rank.tier} size={144} />
+              <p class="display-serif text-3xl sm:text-4xl {tierColor(rank.tier)} mt-3 leading-tight">
+                {rank.tier.charAt(0) + rank.tier.slice(1).toLowerCase()}
+                {#if !['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(rank.tier.toUpperCase())}
+                  <span class="numeric not-italic font-sans">{rank.division}</span>
+                {/if}
+              </p>
+              <p class="numeric text-sm text-[var(--color-ink-muted)] mt-1">{rank.lp} LP</p>
+            </div>
+
+            <!-- Big delta in the middle -->
+            <div class="flex flex-col items-center text-center min-w-[88px]">
+              <span class="numeric text-4xl sm:text-5xl leading-none" style:color={gapColor}>
+                {muGap > 0 ? '↑' : muGap < 0 ? '↓' : '='}
+              </span>
+              <span class="numeric text-2xl sm:text-3xl mt-2" style:color={gapColor}>
+                {muGap > 0 ? '+' : ''}{Math.round(muGap)}
+              </span>
+              <span class="label-mono mt-1 leading-tight max-w-[120px]" style:color={gapColor}>
+                {gapDescriptor}
+              </span>
+            </div>
+
+            <!-- MMR-implied rank, vertical stack -->
+            <div class="flex flex-col items-center text-center">
+              <RankEmblem tier={muTier} size={144} />
+              <p class="display-serif text-3xl sm:text-4xl {tierColor(muTier)} mt-3 leading-tight">
+                {muRankLabel}
+              </p>
+              <p class="numeric text-sm text-[var(--color-ink-muted)] mt-1">μ {mmr.mu}</p>
+            </div>
+          </div>
+        </div>
       </div>
 
-      <!-- Rank panel: visible vs MMR-implied side by side -->
-      <div class="col-span-12 lg:col-span-4 bg-[var(--color-surface-1)] p-6 sm:p-8">
-        <div class="grid grid-cols-2 gap-px bg-[var(--color-rule)] surface-deep mb-5 overflow-hidden">
-          <!-- Visible rank -->
-          <div class="bg-[var(--color-surface-1)] p-4 flex flex-col items-center text-center">
-            <span class="label-mono mb-3">[ visible ]</span>
-            <RankEmblem tier={rank.tier} size={96} />
-            <p class="display-serif text-2xl {tierColor(rank.tier)} mt-2 leading-tight">
-              {rank.tier.charAt(0) + rank.tier.slice(1).toLowerCase()}
-              {#if !['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(rank.tier.toUpperCase())}
-                <span class="numeric not-italic font-sans">{rank.division}</span>
-              {/if}
-            </p>
-            <p class="numeric text-xs text-[var(--color-ink-muted)] mt-1">{rank.lp} LP</p>
-          </div>
-
-          <!-- MMR-implied rank -->
-          <div class="bg-[var(--color-surface-1)] p-4 flex flex-col items-center text-center">
-            <span class="label-mono mb-3">[ μ-implied ]</span>
-            <RankEmblem tier={muTier} size={96} />
-            <p class="display-serif text-2xl {tierColor(muTier)} mt-2 leading-tight">
-              {muRankLabel}
-            </p>
-            <p class="numeric text-xs text-[var(--color-ink-muted)] mt-1">μ {mmr.mu}</p>
-          </div>
+      <!-- Visible-rank side panel: emblem stacked on top, then label -->
+      <div class="col-span-12 lg:col-span-4 bg-[var(--color-surface-1)] p-6 sm:p-8 flex flex-col">
+        <div class="flex items-baseline justify-between mb-6">
+          <span class="label-mono">[ visible rank ]</span>
         </div>
 
-        <!-- Big delta callout -->
-        <div class="border-t border-b border-[var(--color-rule)] py-4 mb-5 text-center">
-          <p class="numeric text-3xl mb-1" style:color={gapColor}>
-            {muGap > 0 ? '+' : ''}{Math.round(muGap)}
-            <span class="text-base text-[var(--color-ink-faint)] font-sans not-italic">MMR</span>
+        <div class="flex flex-col items-center text-center mb-6">
+          <RankEmblem tier={rank.tier} size={120} />
+          <p class="display-serif text-3xl sm:text-4xl {tierColor(rank.tier)} mt-4 leading-tight">
+            {rank.tier.charAt(0) + rank.tier.slice(1).toLowerCase()}
+            {#if !['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(rank.tier.toUpperCase())}
+              <span class="numeric not-italic font-sans">{rank.division}</span>
+            {/if}
           </p>
-          <p class="label-mono" style:color={gapColor}>{gapDescriptor}</p>
+          <p class="numeric text-sm text-[var(--color-ink-muted)] mt-1">{rank.lp} LP</p>
         </div>
 
-        <dl class="space-y-2.5 text-sm">
+        <dl class="space-y-2.5 text-sm border-t border-[var(--color-rule)] pt-5">
           <div class="flex items-baseline justify-between">
             <dt class="label-mono">w / l</dt>
             <dd class="numeric text-[var(--color-ink)]">{rank.wins}<span class="text-[var(--color-good)] mx-0.5">w</span> {rank.losses}<span class="text-[var(--color-bad)] mx-0.5">l</span></dd>
