@@ -62,6 +62,17 @@ export function mmrToRankLabel(mmr: number): string {
   return `Iron ${divLabel(mmr, 0)}`;
 }
 
+export function mmrToTier(mmr: number): Tier {
+  if (mmr >= 2800) return 'MASTER';
+  if (mmr >= 2400) return 'DIAMOND';
+  if (mmr >= 2000) return 'EMERALD';
+  if (mmr >= 1600) return 'PLATINUM';
+  if (mmr >= 1200) return 'GOLD';
+  if (mmr >= 800) return 'SILVER';
+  if (mmr >= 400) return 'BRONZE';
+  return 'IRON';
+}
+
 function divLabel(mmr: number, base: number): string {
   const offset = mmr - base;
   if (offset >= 300) return 'I';
