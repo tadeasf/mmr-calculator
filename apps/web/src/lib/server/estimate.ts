@@ -370,7 +370,7 @@ export async function finalizeEstimate(
   const lpEfficiency = computeLpEfficiency(mmrGap);
   const promoPredictor = computePromoPredictor(combined, tier, division, lp, lpEfficiency);
   const smurfFlag = computeSmurfFlag(wins, losses, mmrGap);
-  const fairnessScore = computeFairnessScore(matchDetails, puuid);
+  const fairnessScore = computeFairnessScore(lobbies, visibleMmr);
 
   const computedAt = Date.now();
   const lobbyEntries: LobbyEntry[] = lobbies.map((l) => ({
@@ -559,14 +559,46 @@ function computeSmurfFlag(wins: number, losses: number, mmrGap: number) {
   return { score: Math.min(1, Math.round(score * 10) / 10), reasons };
 }
 
-function computeFairnessScore(matchDetails: ParticipantSummary[][], playerPuuid: string) {
-  if (matchDetails.length === 0) {
+// Average per-lobby team-MMR spread (max − min within each side, including the
+// player on their own team), and whether enemy avg trended higher or lower
+// than your team avg. Only lobbies where both sides are populated count.
+function computeFairnessScore(lobbies: LobbyData[], playerMmr: number) {
+  let teamSpreadSum = 0;
+  let enemySpreadSum = 0;
+  let teamMinusEnemyAvgSum = 0;
+  let count = 0;
+
+  for (const lobby of lobbies) {
+    const teammates = lobby.participants.filter((p) => !p.isOpponent).map((p) => p.mmr);
+    const enemies = lobby.participants.filter((p) => p.isOpponent).map((p) => p.mmr);
+    if (teammates.length === 0 || enemies.length === 0) continue;
+
+    const teamMmrs = [playerMmr, ...teammates];
+    const teamSpread = Math.max(...teamMmrs) - Math.min(...teamMmrs);
+    const enemySpread = Math.max(...enemies) - Math.min(...enemies);
+    const teamAvg = teamMmrs.reduce((a, b) => a + b, 0) / teamMmrs.length;
+    const enemyAvg = enemies.reduce((a, b) => a + b, 0) / enemies.length;
+
+    teamSpreadSum += teamSpread;
+    enemySpreadSum += enemySpread;
+    teamMinusEnemyAvgSum += teamAvg - enemyAvg;
+    count++;
+  }
+
+  if (count === 0) {
     return { teamMmrSpread: 0, enemyMmrSpread: 0, verdict: 'balanced' as const };
   }
 
-  // We don't have individual participant MMRs here — return placeholder
-  // TODO: wire up full participant MMR breakdown when lobby data is available
-  return { teamMmrSpread: 0, enemyMmrSpread: 0, verdict: 'balanced' as const };
+  const teamMmrSpread = Math.round(teamSpreadSum / count);
+  const enemyMmrSpread = Math.round(enemySpreadSum / count);
+  const avgTeamMinusEnemy = teamMinusEnemyAvgSum / count;
+
+  // Threshold of ±30 MMR averaged across lobbies — narrower than that is noise.
+  let verdict: 'balanced' | 'unfavorable' | 'favorable' = 'balanced';
+  if (avgTeamMinusEnemy > 30) verdict = 'favorable';
+  else if (avgTeamMinusEnemy < -30) verdict = 'unfavorable';
+
+  return { teamMmrSpread, enemyMmrSpread, verdict };
 }
 
 function capitalize(s: string): string {

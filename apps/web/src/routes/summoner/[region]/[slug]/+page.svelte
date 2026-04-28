@@ -344,6 +344,20 @@ function axisPct(mmrValue: number): number {
     {@const ciHighPct = axisPct(mmr.ci90[1])}
     {@const rankMmr = rankToMmr(rank.tier, rank.division, rank.lp)}
     {@const muGap = mmr.mu - rankMmr}
+    {@const muTier = mmrToTier(mmr.mu)}
+    {@const muRankLabel = mmrToRankLabel(mmr.mu)}
+    {@const gapDescriptor =
+      muGap > 100
+        ? `≈ ${Math.round(muGap / 100)} division${Math.round(muGap / 100) === 1 ? '' : 's'} above rank`
+        : muGap > 30
+          ? 'above visible rank'
+          : muGap < -100
+            ? `≈ ${Math.round(-muGap / 100)} division${Math.round(-muGap / 100) === 1 ? '' : 's'} below rank`
+            : muGap < -30
+              ? 'below visible rank'
+              : 'aligned with rank'}
+    {@const gapColor =
+      muGap > 30 ? 'var(--color-good)' : muGap < -30 ? 'var(--color-bad)' : 'var(--color-ink-muted)'}
 
     <!-- Hero: μ and CI visualization -->
     <section class="grid grid-cols-12 gap-px bg-[var(--color-rule)] surface mb-px overflow-hidden rise">
@@ -365,16 +379,16 @@ function axisPct(mmrValue: number): number {
           CI<sub class="numeric">90</sub> = <span class="text-[var(--color-ink)]">{mmr.ci90[0].toLocaleString()} — {mmr.ci90[1].toLocaleString()}</span>
           &nbsp;·&nbsp; σ = <span class="text-[var(--color-ink)]">{mmr.sigma}</span>
         </p>
-        <p class="font-mono text-xs text-[var(--color-ink-faint)] mb-8 flex flex-wrap items-center gap-x-1.5 gap-y-1">
+        <p class="font-mono text-sm text-[var(--color-ink-faint)] mb-8 flex flex-wrap items-center gap-x-2 gap-y-2">
           <span>→</span>
-          <RankEmblem tier={mmrToTier(mmr.ci90[0])} size={18} />
+          <RankEmblem tier={mmrToTier(mmr.ci90[0])} size={28} />
           <span>{mmrToRankLabel(mmr.ci90[0])}</span>
-          <span>to</span>
-          <RankEmblem tier={mmrToTier(mmr.ci90[1])} size={18} />
+          <span class="text-[var(--color-ink-trace)]">to</span>
+          <RankEmblem tier={mmrToTier(mmr.ci90[1])} size={28} />
           <span>{mmrToRankLabel(mmr.ci90[1])}</span>
-          <span>·</span>
+          <span class="text-[var(--color-ink-trace)]">·</span>
           <span>μ at</span>
-          <RankEmblem tier={mmrToTier(mmr.mu)} size={18} />
+          <RankEmblem tier={mmrToTier(mmr.mu)} size={28} />
           <span class="text-[var(--color-ink-muted)]">{mmrToRankLabel(mmr.mu)}</span>
         </p>
 
@@ -407,6 +421,11 @@ function axisPct(mmrValue: number): number {
             <span class="led" style="background: currentColor; box-shadow: 0 0 6px currentColor"></span>
             {mmr.confidence} confidence
           </span>
+          {#if Math.abs(muGap) > 30}
+            <span class={muGap > 0 ? 'chip chip-good' : 'chip chip-bad'}>
+              {muGap > 0 ? '↑' : '↓'} {muGap > 0 ? '+' : ''}{Math.round(muGap)} vs visible rank
+            </span>
+          {/if}
           {#if mmr.lobbiesUsed > 0}
             <span class="chip">{mmr.lobbiesUsed} lobbies analysed</span>
           {/if}
@@ -416,23 +435,43 @@ function axisPct(mmrValue: number): number {
         </div>
       </div>
 
-      <!-- Rank panel -->
-      <div class="col-span-12 lg:col-span-4 bg-[var(--color-surface-1)] p-8">
-        <div class="flex items-baseline justify-between mb-6">
-          <span class="label-mono">[ visible rank ]</span>
-        </div>
-        <div class="flex items-center gap-3 mb-1">
-          <RankEmblem tier={rank.tier} size={56} />
-          <p class="display-serif text-4xl {tierColor(rank.tier)} leading-[1]">
-            {rank.tier.charAt(0) + rank.tier.slice(1).toLowerCase()}
-            {#if !['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(rank.tier.toUpperCase())}
-              <span class="numeric not-italic font-sans">{rank.division}</span>
-            {/if}
-          </p>
-        </div>
-        <p class="numeric text-[var(--color-ink-muted)] text-sm mb-8">{rank.lp} LP</p>
+      <!-- Rank panel: visible vs MMR-implied side by side -->
+      <div class="col-span-12 lg:col-span-4 bg-[var(--color-surface-1)] p-6 sm:p-8">
+        <div class="grid grid-cols-2 gap-px bg-[var(--color-rule)] surface-deep mb-5 overflow-hidden">
+          <!-- Visible rank -->
+          <div class="bg-[var(--color-surface-1)] p-4 flex flex-col items-center text-center">
+            <span class="label-mono mb-3">[ visible ]</span>
+            <RankEmblem tier={rank.tier} size={96} />
+            <p class="display-serif text-2xl {tierColor(rank.tier)} mt-2 leading-tight">
+              {rank.tier.charAt(0) + rank.tier.slice(1).toLowerCase()}
+              {#if !['MASTER', 'GRANDMASTER', 'CHALLENGER'].includes(rank.tier.toUpperCase())}
+                <span class="numeric not-italic font-sans">{rank.division}</span>
+              {/if}
+            </p>
+            <p class="numeric text-xs text-[var(--color-ink-muted)] mt-1">{rank.lp} LP</p>
+          </div>
 
-        <dl class="space-y-3 text-sm border-t border-[var(--color-rule)] pt-5">
+          <!-- MMR-implied rank -->
+          <div class="bg-[var(--color-surface-1)] p-4 flex flex-col items-center text-center">
+            <span class="label-mono mb-3">[ μ-implied ]</span>
+            <RankEmblem tier={muTier} size={96} />
+            <p class="display-serif text-2xl {tierColor(muTier)} mt-2 leading-tight">
+              {muRankLabel}
+            </p>
+            <p class="numeric text-xs text-[var(--color-ink-muted)] mt-1">μ {mmr.mu}</p>
+          </div>
+        </div>
+
+        <!-- Big delta callout -->
+        <div class="border-t border-b border-[var(--color-rule)] py-4 mb-5 text-center">
+          <p class="numeric text-3xl mb-1" style:color={gapColor}>
+            {muGap > 0 ? '+' : ''}{Math.round(muGap)}
+            <span class="text-base text-[var(--color-ink-faint)] font-sans not-italic">MMR</span>
+          </p>
+          <p class="label-mono" style:color={gapColor}>{gapDescriptor}</p>
+        </div>
+
+        <dl class="space-y-2.5 text-sm">
           <div class="flex items-baseline justify-between">
             <dt class="label-mono">w / l</dt>
             <dd class="numeric text-[var(--color-ink)]">{rank.wins}<span class="text-[var(--color-good)] mx-0.5">w</span> {rank.losses}<span class="text-[var(--color-bad)] mx-0.5">l</span></dd>
@@ -440,12 +479,6 @@ function axisPct(mmrValue: number): number {
           <div class="flex items-baseline justify-between">
             <dt class="label-mono">winrate</dt>
             <dd class="numeric text-[var(--color-ink)]">{winrate}</dd>
-          </div>
-          <div class="flex items-baseline justify-between">
-            <dt class="label-mono">μ − rank</dt>
-            <dd class="numeric {muGap > 30 ? 'text-[var(--color-good)]' : muGap < -30 ? 'text-[var(--color-bad)]' : 'text-[var(--color-ink)]'}">
-              {muGap > 0 ? '+' : ''}{Math.round(muGap)}
-            </dd>
           </div>
         </dl>
       </div>
@@ -554,24 +587,32 @@ function axisPct(mmrValue: number): number {
     {/if}
 
     <!-- Fairness -->
-    {#if result.fairnessScore}
+    {#if result.fairnessScore && mmr.lobbiesUsed > 0}
+      {@const fs = result.fairnessScore}
+      {@const verdictHint =
+        fs.verdict === 'favorable'
+          ? 'enemies averaged lower MMR than your team'
+          : fs.verdict === 'unfavorable'
+          ? 'enemies averaged higher MMR than your team'
+          : 'team and enemy averages within ±30 MMR'}
       <section class="surface p-6 sm:p-7 mb-px rise" style="animation-delay: 240ms">
         <div class="flex items-baseline justify-between mb-4">
           <span class="label-mono">[ lobby fairness · last {mmr.lobbiesUsed} games ]</span>
-          <span class={`numeric text-sm ${verdictColor(result.fairnessScore.verdict)}`}>
-            {result.fairnessScore.verdict.toUpperCase()}
+          <span class={`numeric text-sm ${verdictColor(fs.verdict)}`}>
+            {fs.verdict.toUpperCase()}
           </span>
         </div>
-        <dl class="grid grid-cols-2 gap-6 text-sm">
+        <dl class="grid grid-cols-2 gap-6 text-sm mb-3">
           <div class="flex items-baseline justify-between border-b border-[var(--color-rule)] pb-2">
-            <dt class="label-mono">your team Δ</dt>
-            <dd class="numeric text-[var(--color-ink)]">{result.fairnessScore.teamMmrSpread} MMR</dd>
+            <dt class="label-mono">your team spread</dt>
+            <dd class="numeric text-[var(--color-ink)]">{fs.teamMmrSpread} MMR</dd>
           </div>
           <div class="flex items-baseline justify-between border-b border-[var(--color-rule)] pb-2">
-            <dt class="label-mono">enemy Δ</dt>
-            <dd class="numeric text-[var(--color-ink)]">{result.fairnessScore.enemyMmrSpread} MMR</dd>
+            <dt class="label-mono">enemy team spread</dt>
+            <dd class="numeric text-[var(--color-ink)]">{fs.enemyMmrSpread} MMR</dd>
           </div>
         </dl>
+        <p class="text-xs text-[var(--color-ink-faint)] leading-relaxed">→ {verdictHint}</p>
       </section>
     {/if}
 
