@@ -32,6 +32,9 @@ export const POST: RequestHandler = async ({ request, platform }) => {
     body: JSON.stringify(params),
     headers: { 'content-type': 'application/json' },
   });
-  const doBody = await doRes.json();
-  return json({ jobId: id, ...(doBody as object) });
+  const doBody = (await doRes.json()) as { stage?: string };
+  console.log('[mmr/start]', { jobId: id, stage: doBody.stage });
+  // jobId must be the idFromName key, not the DO's internal hex id — /status
+  // re-derives the same DO by calling idFromName(jobId).
+  return json({ jobId: id, stage: doBody.stage });
 };
