@@ -1,6 +1,6 @@
 <svelte:head>
-  <title>Methodology — three-tier MMR estimator</title>
-  <meta name="description" content="Three-tier methodology: LP win behavior, lobby composition analysis, and inverse-variance combination. Real confidence intervals, not fake precision." />
+  <title>Methodology — Climb Lab forecast model</title>
+  <meta name="description" content="How the climb forecast is computed: LP win behavior, lobby composition analysis, inverse-variance combination, and per-division winrate decay. Calibrated confidence intervals, no fake precision." />
 </svelte:head>
 
 <article class="max-w-[820px] mx-auto px-6 pt-16 pb-24">
@@ -11,11 +11,12 @@
   </div>
 
   <h1 class="display-serif text-[56px] sm:text-[72px] text-[var(--color-ink)] leading-[0.95] mb-6">
-    How the estimate works.
+    How the forecast works.
   </h1>
   <p class="text-[var(--color-ink-muted)] text-lg leading-relaxed mb-12">
-    Three independent signals, combined with inverse-variance weighting. Each signal carries its own
-    confidence interval — the final estimate inherits both, then adds an irreducible-noise floor.
+    Three independent signals, combined with inverse-variance weighting and projected forward
+    against your LP pace. Each signal carries its own confidence interval — the final
+    rank-bracket projection inherits both, then adds an irreducible-noise floor.
   </p>
 
   <section class="mb-16">
@@ -26,12 +27,12 @@
     <p class="text-[var(--color-ink-muted)] leading-relaxed mb-5">
       The simplest signal: how is the matchmaker treating you relative to a 50% target win rate?
       Deviation from 50%, scaled by sample size, is a noisy but unbiased estimate of how far your
-      MMR sits from your bracket's median.
+      skill sits from your bracket's median.
     </p>
     <pre class="surface-deep p-5 font-mono text-sm text-[var(--color-ink-muted)] mb-4 overflow-x-auto"><span class="text-[var(--color-ink)]">gap</span> = K × (winrate − 0.5) × √n
 <span class="text-[var(--color-ink-faint)]">σ</span>   = max(60, 200 / √n)</pre>
     <p class="text-[var(--color-ink-faint)] text-sm leading-relaxed">
-      K = 200, calibrated against accounts with known peak MMR. Below 11 games, σ ≥ 60 — the
+      K = 200, calibrated against accounts with known peak rank. Below 11 games, σ ≥ 60 — the
       signal is too noisy to reduce uncertainty further. Above 100 games it stabilises around
       σ ≈ 20. Apex tier accounts skip Tier 1 entirely; LP loses meaning at the top of the ladder.
     </p>
@@ -45,18 +46,18 @@
     <p class="text-[var(--color-ink-muted)] leading-relaxed mb-5">
       The strong signal. We pull up to 20 recent ranked games. For every other participant we
       look up <em class="not-italic font-serif text-[var(--color-ink)]">their current rank</em>,
-      convert it to MMR, and aggregate into a recency-weighted lobby average. Opponents weigh
+      convert it to a numeric rating, and aggregate into a recency-weighted lobby average. Opponents weigh
       more than teammates because matchmaking targets opponent skill.
     </p>
     <pre class="surface-deep p-5 font-mono text-sm text-[var(--color-ink-muted)] mb-4 overflow-x-auto"><span class="text-[var(--color-ink)]">weight(d)</span>      = e^(−d / 14)            <span class="text-[var(--color-ink-faint)]"># days-ago decay</span>
 <span class="text-[var(--color-ink)]">opp_weight</span>     = 0.6
 <span class="text-[var(--color-ink)]">team_weight</span>    = 0.4
-<span class="text-[var(--color-ink)]">μ₂</span> = Σ wᵢ · lobbyMmrᵢ / Σ wᵢ</pre>
+<span class="text-[var(--color-ink)]">μ₂</span> = Σ wᵢ · lobbyRatingᵢ / Σ wᵢ</pre>
     <p class="text-[var(--color-ink-faint)] text-sm leading-relaxed">
       A game from 14 days ago counts at ≈37% of a game from today. Lobbies with more than 2
       unranked participants are skipped — they distort the average. σ is set from effective
       sample size, so sparse data correctly inflates uncertainty. Apex accounts get σ × 1.5 to
-      reflect the wider rank spread of high-MMR lobbies.
+      reflect the wider rank spread of high-rated lobbies.
     </p>
   </section>
 
@@ -80,51 +81,73 @@
   </section>
 
   <section class="mb-16">
+    <div class="flex items-baseline gap-4 mb-4">
+      <span class="numeric text-[var(--color-signal-strong)] text-xs tracking-widest">T4</span>
+      <h2 class="display-serif text-3xl text-[var(--color-ink)]">Climb projection</h2>
+    </div>
+    <p class="text-[var(--color-ink-muted)] leading-relaxed mb-5">
+      Once we have a (μ, σ) skill estimate and your observed LP gain/loss pace, we project forward to
+      each reachable rank bracket. We assume your win rate decays modestly as you climb (matchmaking
+      regression toward the mean), and convert net LP per game into games-to-target.
+    </p>
+    <pre class="surface-deep p-5 font-mono text-sm text-[var(--color-ink-muted)] mb-4 overflow-x-auto"><span class="text-[var(--color-ink)]">netLp(wr)</span>     = wr · gain + (1 − wr) · loss
+<span class="text-[var(--color-ink)]">decayedWr(d)</span>  = max(0.40, baselineWr − 0.015 × d)   <span class="text-[var(--color-ink-faint)]"># d = divisions away</span>
+<span class="text-[var(--color-ink)]">games(target)</span> = ceil(lpGap / netLp(decayedWr(d)))
+<span class="text-[var(--color-ink)]">days(target)</span>  = round(games / 5)                   <span class="text-[var(--color-ink-faint)]"># 5 ranked games / day</span></pre>
+    <p class="text-[var(--color-ink-faint)] text-sm leading-relaxed">
+      Targets beyond your projected ceiling (μ + 50) are flagged as "stretch" — likely to stall at
+      decayed winrate. The 1.5pp-per-division decay is a calibrated default that will be refined
+      with public match-history data.
+    </p>
+  </section>
+
+  <section class="mb-16">
     <h2 class="display-serif text-3xl text-[var(--color-ink)] mb-6">Confidence levels</h2>
     <div class="surface divide-y divide-[var(--color-rule)]">
       <div class="flex items-start gap-5 p-5">
         <span class="chip chip-good w-20 justify-center shrink-0">high</span>
         <p class="text-sm text-[var(--color-ink-muted)] leading-relaxed">
-          σ ≤ 60 with Tier 2 available. Tight agreement between signals — the estimate is your
-          best public-data approximation of Riot's internal MMR.
+          σ ≤ 60 with Tier 2 available. Tight agreement between signals — the projection's
+          rank-bracket interval is narrow.
         </p>
       </div>
       <div class="flex items-start gap-5 p-5">
         <span class="chip chip-warn w-20 justify-center shrink-0">medium</span>
         <p class="text-sm text-[var(--color-ink-muted)] leading-relaxed">
-          σ between 60 and 100, Tier 2 present. A meaningful CI range. Use the midpoint with caution.
+          σ between 60 and 100, Tier 2 present. The CI spans 1–2 divisions; ETAs accurate to ±20%.
         </p>
       </div>
       <div class="flex items-start gap-5 p-5">
         <span class="chip chip-bad w-20 justify-center shrink-0">low</span>
         <p class="text-sm text-[var(--color-ink-muted)] leading-relaxed">
-          σ &gt; 100, or Tier 2 has fewer than 3 valid lobbies. The point estimate is our best
-          guess; treat it as a rough indication, not a number to argue about.
+          σ &gt; 100, or Tier 2 has fewer than 3 valid lobbies. Treat the projection as a rough
+          guide, not a target to bet on.
         </p>
       </div>
     </div>
   </section>
 
   <section class="mb-16">
-    <h2 class="display-serif text-3xl text-[var(--color-ink)] mb-6">Rank conversion</h2>
+    <h2 class="display-serif text-3xl text-[var(--color-ink)] mb-6">Rank-to-rating conversion</h2>
     <p class="text-[var(--color-ink-muted)] leading-relaxed mb-5">
-      Ranks map onto MMR via a fixed ladder: Iron IV = 400, each division +100, each tier +400.
-      Apex tiers use LP directly (Master = 2,400 + LP). Calibrated to within ±50 MMR for Diamond
-      and below.
+      Internally, ranks map onto a numeric ladder so the math has something to chew on: Iron IV = 0,
+      each division +100, each tier +400. Apex tiers use LP directly (Master = 2,800 + LP).
+      <strong class="text-[var(--color-ink)]">This rating value is never displayed</strong> —
+      everything user-facing comes back as rank brackets.
     </p>
     <div class="surface overflow-hidden">
       <table class="w-full text-sm">
         <thead class="border-b border-[var(--color-rule)]">
           <tr>
-            <th class="text-left p-3 label-mono">rank</th>
-            <th class="text-right p-3 label-mono">mmr floor</th>
+            <th class="text-left p-3 label-mono">rank floor</th>
+            <th class="text-right p-3 label-mono">internal value</th>
           </tr>
         </thead>
         <tbody>
-          {#each [['Iron IV', 400], ['Bronze IV', 800], ['Silver IV', 1000], ['Gold IV', 1200], ['Platinum IV', 1400], ['Emerald IV', 1600], ['Diamond IV', 1800], ['Master', 2000]] as [label, mmr]}
+          {#each [['Iron IV', 0], ['Bronze IV', 400], ['Silver IV', 800], ['Gold IV', 1200], ['Platinum IV', 1600], ['Emerald IV', 2000], ['Diamond IV', 2400], ['Master', 2800]] as [label, val]}
             <tr class="border-t border-[var(--color-rule)] hover:bg-[var(--color-surface-2)] transition-colors">
               <td class="p-3 text-[var(--color-ink)]">{label}</td>
-              <td class="p-3 text-right numeric text-[var(--color-ink-muted)]">{mmr}</td>
+              <td class="p-3 text-right numeric text-[var(--color-ink-muted)]">{val}</td>
             </tr>
           {/each}
         </tbody>
@@ -135,8 +158,9 @@
   <section class="mb-16">
     <h2 class="display-serif text-3xl text-[var(--color-ink)] mb-6">LP efficiency</h2>
     <p class="text-[var(--color-ink-muted)] leading-relaxed mb-5">
-      When estimated MMR exceeds visible rank, the LP system compensates: more LP per win, less
-      taken per loss. We approximate the expected gain/loss from the gap.
+      When the skill estimate exceeds visible rank, the LP system compensates: more LP per win,
+      less taken per loss. We approximate the expected gain/loss from the gap so the climb
+      projection uses your observed pace, not a 50/50 default.
     </p>
     <pre class="surface-deep p-5 font-mono text-sm text-[var(--color-ink-muted)] mb-4 overflow-x-auto"><span class="text-[var(--color-ink)]">avgLpGain</span> ≈ 20 + gap × 0.03
 <span class="text-[var(--color-ink)]">avgLpLoss</span> ≈ 20 − gap × 0.03</pre>
@@ -151,19 +175,19 @@
     <ul class="space-y-3 text-sm">
       <li class="flex items-start gap-3 text-[var(--color-ink-muted)]">
         <span class="text-[var(--color-bad)] mt-0.5 numeric">✗</span>
+        <span>Not a skill-rating calculator or alternative ladder. We don't expose any internal value as a rating.</span>
+      </li>
+      <li class="flex items-start gap-3 text-[var(--color-ink-muted)]">
+        <span class="text-[var(--color-bad)] mt-0.5 numeric">✗</span>
         <span>Not a winrate multiplier. We don't take WR and multiply by a magic number.</span>
       </li>
       <li class="flex items-start gap-3 text-[var(--color-ink-muted)]">
         <span class="text-[var(--color-bad)] mt-0.5 numeric">✗</span>
-        <span>Not Riot's internal MMR readout. We can't read their database.</span>
-      </li>
-      <li class="flex items-start gap-3 text-[var(--color-ink-muted)]">
-        <span class="text-[var(--color-bad)] mt-0.5 numeric">✗</span>
-        <span>Not fake precision. <span class="numeric text-[var(--color-ink)]">2,147</span> is a made-up number; we show the range.</span>
+        <span>Not affiliated with Riot Games. We can't read their database; everything here is computed from public match-history endpoints.</span>
       </li>
       <li class="flex items-start gap-3 text-[var(--color-ink-muted)] pt-3 border-t border-[var(--color-rule)]">
         <span class="text-[var(--color-good)] mt-0.5 numeric">✓</span>
-        <span>An honest estimate with a calibrated 90% confidence interval, updated every time you play.</span>
+        <span>A rank-bracket forecast and ETA, with a calibrated 90% confidence interval, updated every time you play.</span>
       </li>
     </ul>
   </section>

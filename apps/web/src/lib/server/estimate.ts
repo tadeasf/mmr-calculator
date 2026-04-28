@@ -5,6 +5,7 @@ import {
   computeLobbyMmr,
   computeTier1,
   computeTier2,
+  mmrToRankLabel,
   rankToMmr,
   sigmaToConfidence,
 } from '@mmr-calculator/core';
@@ -55,6 +56,28 @@ export interface LobbyEntry {
   participants: { puuid: string; role: string; mmr: number; isOpponent: boolean }[];
 }
 
+export interface ClimbProjection {
+  // Best-estimate ceiling expressed as a rank label (e.g. "Platinum II").
+  // Derived from the underlying skill estimate; the raw rating value is never
+  // surfaced to the user.
+  ceilingLabel: string;
+  // The ETA path: each step the user could realistically reach, with games
+  // and days estimates assuming current win-rate (with a per-division decay).
+  steps: ClimbStep[];
+  // LP/game pace summary, derived from public LP gain/loss observations.
+  netLpPerGame: number;
+  baselineWinrate: number;
+  notes: string[];
+}
+
+export interface ClimbStep {
+  label: string;
+  games: number;
+  days: number;
+  decayedWinrate: number;
+  beyondCeiling: boolean;
+}
+
 export interface MmrResult {
   summoner: { puuid: string; riotId: string; tag: string; region: string };
   rank: { tier: string; division: string; lp: number; wins: number; losses: number };
@@ -81,6 +104,7 @@ export interface MmrResult {
     enemyMmrSpread: number;
     verdict: 'balanced' | 'unfavorable' | 'favorable';
   };
+  climbProjection: ClimbProjection;
 }
 
 export interface UnrankedResult {
@@ -371,6 +395,7 @@ export async function finalizeEstimate(
   const promoPredictor = computePromoPredictor(combined, tier, division, lp, lpEfficiency);
   const smurfFlag = computeSmurfFlag(wins, losses, mmrGap);
   const fairnessScore = computeFairnessScore(lobbies, visibleMmr);
+  const climbProjection = computeClimbProjection(combined, tier, division, lp, wins, losses);
 
   const computedAt = Date.now();
   const lobbyEntries: LobbyEntry[] = lobbies.map((l) => ({
@@ -408,6 +433,7 @@ export async function finalizeEstimate(
     promoPredictor,
     smurfFlag,
     fairnessScore,
+    climbProjection,
   };
 
   const resultJson = JSON.stringify(result);
@@ -534,6 +560,127 @@ function computePromoPredictor(
   const conf: 'high' | 'medium' | 'low' =
     combined.sigma <= 60 ? 'high' : combined.sigma <= 100 ? 'medium' : 'low';
   return { nextRankLabel: nextLabel, gamesEstimate, confidence: conf };
+}
+
+// Project where the player can realistically reach this season at their
+// current pace. Uses public LP gain/loss observations and the underlying
+// skill estimate; the user-facing output is rank labels + games + days,
+// never raw rating numbers.
+const TIERS_ASC = [
+  'IRON',
+  'BRONZE',
+  'SILVER',
+  'GOLD',
+  'PLATINUM',
+  'EMERALD',
+  'DIAMOND',
+  'MASTER',
+] as const;
+const DIVS_ASC = ['IV', 'III', 'II', 'I'] as const;
+// Apex (Master+) doesn't have divisions or a clean LP→games projection here.
+// We emit a single ceiling for those accounts and skip step-by-step ETAs.
+function computeClimbProjection(
+  combined: CombinedEstimate,
+  tier: string,
+  division: string,
+  lp: number,
+  wins: number,
+  losses: number,
+): ClimbProjection {
+  const T = tier.toUpperCase();
+  const isApex = APEX_TIERS.has(T);
+  const visibleMmr = rankToMmr(tier, division, lp);
+  const ceilingValue = Math.max(visibleMmr, combined.mu);
+  const ceilingLabel = mmrToRankLabel(Math.round(ceilingValue));
+
+  const totalGames = wins + losses;
+  const baselineWinrate = totalGames > 0 ? wins / totalGames : 0.5;
+
+  // Use the LP gap + observed gain/loss pace; LP gain/loss come from
+  // computeLpEfficiency which is keyed off mmrGap, so it already adapts to
+  // accounts climbing fast vs. stuck.
+  const mmrGap = combined.mu - visibleMmr;
+  const lpEff = computeLpEfficiency(mmrGap);
+  const netLpPerGame = baselineWinrate * lpEff.avgLpGain + (1 - baselineWinrate) * lpEff.avgLpLoss;
+
+  const notes: string[] = [];
+  if (totalGames < 11) notes.push('Few ranked games — projection is noisy.');
+  if (combined.sigma > 100) notes.push('Wide CI — treat ETAs as rough.');
+
+  if (isApex || netLpPerGame <= 0) {
+    if (netLpPerGame <= 0) notes.push('Net LP per game is negative — climb estimate skipped.');
+    return {
+      ceilingLabel,
+      steps: [],
+      netLpPerGame: Math.round(netLpPerGame * 10) / 10,
+      baselineWinrate: Math.round(baselineWinrate * 100) / 100,
+      notes,
+    };
+  }
+
+  // Build the next ~3 reachable brackets as steps. Each step's "decayed"
+  // winrate falls 1.5pp per division climbed past current rank — a rough
+  // matchmaking-regression-to-mean assumption.
+  const targets: Array<{ tier: string; division: string }> = [];
+  let curTier = T;
+  let curDiv = division.toUpperCase();
+  for (let i = 0; i < 4; i++) {
+    const next = nextRank(curTier, curDiv);
+    if (!next) break;
+    targets.push(next);
+    curTier = next.tier;
+    curDiv = next.division;
+  }
+
+  const steps: ClimbStep[] = [];
+  for (const t of targets) {
+    const targetMmr = rankToMmr(t.tier, t.division, 0);
+    const lpGap = targetMmr - visibleMmr;
+    if (lpGap <= 0) continue;
+
+    const divsAway = lpGap / 100;
+    const decayedWr = Math.max(0.4, baselineWinrate - divsAway * 0.015);
+    const decayedNet = decayedWr * lpEff.avgLpGain + (1 - decayedWr) * lpEff.avgLpLoss;
+    if (decayedNet <= 0) {
+      notes.push(
+        `Stalls before ${capitalize(t.tier)} ${t.division} at the projected winrate decay.`,
+      );
+      break;
+    }
+
+    const games = Math.ceil(lpGap / decayedNet);
+    // Assume 5 ranked games / day at sustainable cadence.
+    const days = Math.max(1, Math.round(games / 5));
+    steps.push({
+      label: `${capitalize(t.tier)} ${t.division}`,
+      games,
+      days,
+      decayedWinrate: Math.round(decayedWr * 100),
+      beyondCeiling: targetMmr > ceilingValue + 50,
+    });
+  }
+
+  return {
+    ceilingLabel,
+    steps,
+    netLpPerGame: Math.round(netLpPerGame * 10) / 10,
+    baselineWinrate: Math.round(baselineWinrate * 100) / 100,
+    notes,
+  };
+}
+
+function nextRank(tier: string, division: string): { tier: string; division: string } | null {
+  const T = tier.toUpperCase();
+  const D = division.toUpperCase();
+  if (APEX_TIERS.has(T)) return null;
+  const dIdx = DIVS_ASC.indexOf(D as (typeof DIVS_ASC)[number]);
+  if (dIdx < 0) return null;
+  if (dIdx < DIVS_ASC.length - 1) {
+    return { tier: T, division: DIVS_ASC[dIdx + 1] };
+  }
+  const tIdx = TIERS_ASC.indexOf(T as (typeof TIERS_ASC)[number]);
+  if (tIdx < 0 || tIdx >= TIERS_ASC.length - 1) return null;
+  return { tier: TIERS_ASC[tIdx + 1], division: 'IV' };
 }
 
 function computeSmurfFlag(wins: number, losses: number, mmrGap: number) {

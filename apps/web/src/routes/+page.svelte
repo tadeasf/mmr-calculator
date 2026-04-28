@@ -30,8 +30,8 @@ function onSubmit(e: SubmitEvent) {
 </script>
 
 <svelte:head>
-  <title>MMR Estimator — honest matchmaking-rating analytics for League of Legends</title>
-  <meta name="description" content="A three-tier inverse-variance estimator. Win behavior, lobby composition, and combined confidence intervals — no winrate multipliers, no fake-precise numbers." />
+  <title>Climb Lab — ranked-progression forecasts for League of Legends</title>
+  <meta name="description" content="See the rank you can realistically reach this season, the games it'll take at your current pace, and where matchmaking is treating you fairly. Public-data forecast with calibrated confidence intervals." />
 </svelte:head>
 
 <div class="max-w-[1180px] mx-auto px-6 pt-16 pb-24">
@@ -41,53 +41,48 @@ function onSubmit(e: SubmitEvent) {
         <div class="flex items-center gap-3 mb-6 rise" style="animation-delay: 0ms">
           <span class="label-mono">[ instrument · 01 ]</span>
           <span class="h-px flex-1 bg-[var(--color-rule)]"></span>
-          <span class="label-mono">three-tier estimator</span>
+          <span class="label-mono">ranked trajectory forecast</span>
         </div>
 
         <h1 class="display-serif text-[64px] sm:text-[88px] lg:text-[112px] text-[var(--color-ink)] mb-2 rise" style="animation-delay: 80ms">
-          What's your
-          <span class="text-[var(--color-signal-strong)]">actual</span>
-          MMR?
+          How far can you
+          <span class="text-[var(--color-signal-strong)]">climb</span>
+          this season?
         </h1>
 
         <p class="text-[15px] text-[var(--color-ink-muted)] leading-[1.7] max-w-xl mt-8 rise" style="animation-delay: 200ms">
-          Not a winrate multiplier with extra steps. We pull your last 20 ranked games, look up the
+          A forecast of the rank you can realistically reach, given your current rank, recent
+          opponents, and LP pace. We pull your last 20 ranked games, look up the
           <em class="font-serif text-[var(--color-ink)] not-italic">current rank of every other participant</em>, weight opponents over teammates,
-          and combine that with your LP behavior. Output: <span class="numeric text-[var(--color-ink)]">μ ± σ</span> with a calibrated 90% confidence interval — not a single fake-precise number.
+          and project games-to-target with a calibrated confidence interval — never a fake-precise rating number.
         </p>
       </div>
 
       <div class="col-span-12 lg:col-span-5 rise" style="animation-delay: 320ms">
         <div class="surface p-6 relative tick-rule">
           <div class="flex items-baseline justify-between mb-4">
-            <span class="label-mono">specimen output</span>
+            <span class="label-mono">specimen forecast</span>
             <span class="label-mono">euw · solo</span>
           </div>
 
-          <div class="flex items-baseline gap-3 mb-1">
-            <span class="numeric text-[56px] text-[var(--color-ink)] leading-none">2,148</span>
-            <span class="numeric text-[var(--color-ink-faint)] text-sm">MMR</span>
-          </div>
+          <p class="label-mono mb-2">[ projected ceiling ]</p>
+          <p class="display-serif text-3xl text-[var(--color-ink)] leading-tight mb-1">Diamond IV</p>
           <p class="numeric text-xs text-[var(--color-ink-faint)] mb-6">
-            CI<sub class="numeric">90</sub> 2,068 — 2,228 &nbsp;·&nbsp; σ = 49
+            confidence high &nbsp;·&nbsp; CI<sub class="numeric">90</sub> Emerald II — Diamond III
           </p>
 
-          <div class="relative h-7 mb-6">
-            <div class="absolute inset-x-0 top-1/2 h-px bg-[var(--color-rule)]"></div>
-            <div class="absolute top-1/2 left-[24%] right-[24%] h-2 -mt-1 bg-[var(--color-signal-strong)]/15 border-l border-r border-[var(--color-signal-strong)]"></div>
-            <div class="absolute top-1/2 left-1/2 w-[2px] h-5 -mt-2.5 -ml-px bg-[var(--color-signal-strong)]"></div>
-            <div class="absolute -bottom-0.5 left-[24%] label-mono numeric -translate-x-1/2">2068</div>
-            <div class="absolute -bottom-0.5 right-[24%] label-mono numeric translate-x-1/2">2228</div>
-          </div>
-
-          <div class="grid grid-cols-2 gap-3 pt-4 border-t border-[var(--color-rule)]">
+          <div class="grid grid-cols-3 gap-3 pt-4 border-t border-[var(--color-rule)]">
             <div>
-              <p class="label-mono mb-1">tier 1 · win</p>
-              <p class="numeric text-sm text-[var(--color-ink)]">+38<span class="text-[var(--color-ink-faint)]"> ±62</span></p>
+              <p class="label-mono mb-1">eta</p>
+              <p class="numeric text-sm text-[var(--color-ink)]">≈ 38<span class="text-[var(--color-ink-faint)]"> games</span></p>
             </div>
             <div>
-              <p class="label-mono mb-1">tier 2 · lobby</p>
-              <p class="numeric text-sm text-[var(--color-ink)]">2154<span class="text-[var(--color-ink-faint)]"> ±55</span></p>
+              <p class="label-mono mb-1">days</p>
+              <p class="numeric text-sm text-[var(--color-ink)]">≈ 8</p>
+            </div>
+            <div>
+              <p class="label-mono mb-1">lp pace</p>
+              <p class="numeric text-sm text-[var(--color-ink)]">+2.4<span class="text-[var(--color-ink-faint)]"> /game</span></p>
             </div>
           </div>
 
@@ -193,7 +188,7 @@ function onSubmit(e: SubmitEvent) {
           Current rank of all 9 other participants in your last 20 games. Opponents weighted 0.6 vs teammates 0.4. Recency-decayed at exp(−d/14).
         </p>
         <code class="block text-xs font-mono text-[var(--color-ink-muted)] bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-sm px-3 py-2">
-          μ₂ = Σ wᵢ · lobbyMmrᵢ
+          μ₂ = Σ wᵢ · lobbyRatingᵢ
         </code>
       </article>
 
@@ -202,9 +197,9 @@ function onSubmit(e: SubmitEvent) {
           <span class="numeric text-[var(--color-signal-strong)] text-xs tracking-widest">T3</span>
           <span class="label-mono">cost: 0</span>
         </div>
-        <h3 class="display-serif text-2xl text-[var(--color-ink)] mb-3">Inverse-variance</h3>
+        <h3 class="display-serif text-2xl text-[var(--color-ink)] mb-3">Inverse-variance forecast</h3>
         <p class="text-sm text-[var(--color-ink-muted)] leading-relaxed mb-4">
-          Combine T1 and T2 with weights wᵢ = 1/σᵢ². Confident tier dominates. Final σ floored at 40 MMR — irreducible matchmaker noise.
+          Combine T1 and T2 with weights wᵢ = 1/σᵢ², then convert into a games-to-target projection. The confident tier dominates; final σ floored at 40 — irreducible matchmaker noise.
         </p>
         <code class="block text-xs font-mono text-[var(--color-ink-muted)] bg-[var(--color-paper)] border border-[var(--color-rule)] rounded-sm px-3 py-2">
           σ = √(1 / Σ 1/σᵢ²)
@@ -219,12 +214,13 @@ function onSubmit(e: SubmitEvent) {
       <span class="h-px w-16 bg-[var(--color-rule)]"></span>
     </div>
     <p class="display-serif text-[40px] sm:text-[52px] text-[var(--color-ink)] leading-[1.05]">
-      We show you <span class="text-[var(--color-signal-strong)]">2,148 ± 80</span>, not <span class="line-through decoration-[var(--color-bad)]/60">2,147</span>.
+      We show you a <span class="text-[var(--color-signal-strong)]">rank range</span>, not <span class="line-through decoration-[var(--color-bad)]/60">a fake-precise number</span>.
     </p>
     <p class="text-[15px] text-[var(--color-ink-muted)] leading-relaxed mt-6">
-      Anyone showing you a single fake-precise MMR number is making it up. The number changes day to day,
-      lobby to lobby, depending on who Riot's matchmaker pairs you with. The honest answer is a range with
-      a stated confidence — and that's what this tool returns.
+      The honest answer to "where am I really?" is a rank bracket with a stated confidence — and an
+      ETA to your goal at your current LP pace. Climb Lab returns rank-bracket projections,
+      <em class="not-italic font-serif text-[var(--color-ink)]">never</em> a single rating value, because
+      the underlying skill changes day to day, lobby to lobby.
       <a href="/methodology" class="text-[var(--color-signal)] hover:text-[var(--color-signal-strong)] underline underline-offset-4 decoration-1">Read the methodology →</a>
     </p>
   </section>
