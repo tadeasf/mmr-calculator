@@ -14,7 +14,7 @@
     "@mmr-calculator/db": "workspace:*",
     "@mmr-calculator/riot-client": "workspace:*",
     "hono": "^4.6.0",
-    "zod": "^3.23.0"
+    "zod": "^4.4.3"
   },
   "devDependencies": {
     "@sveltejs/adapter-cloudflare": "^5.0.0",
